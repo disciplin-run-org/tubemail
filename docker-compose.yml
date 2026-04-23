@@ -1,0 +1,22 @@
+services:
+  tubemail-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MCP_PORT=8004
+      - TUBEMAIL_SECRET=${TUBEMAIL_SECRET:?TUBEMAIL_SECRET is required}
+    volumes:
+      - tubemail-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    network_mode: host
+    restart: unless-stopped
+
+volumes:
+  tubemail-data:

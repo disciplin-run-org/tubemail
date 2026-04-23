@@ -1,0 +1,316 @@
+"""Tests for the orchestrator MCP tool layer."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from fastmcp import FastMCP
+
+from tubemail_hub.bridge.engine import BridgeEngine
+from tubemail_hub.bridge.models import PermissionRequestPayload
+from tubemail_hub.tools import workers as workers_tools
+
+
+@pytest.fixture
+async def mcp_and_engine(tmp_path: Path):
+    engine = BridgeEngine(data_dir=tmp_path)
+    mcp = FastMCP("tubemail-test")
+    workers_tools.register(mcp, engine)
+    return mcp, engine
+
+
+async def _call(mcp: FastMCP, name: str, **kwargs):
+    """Call a registered tool by name and return its ToolResult."""
+    return await mcp.call_tool(name, kwargs)
+
+
+async def test_list_workers_shows_ecosystem(mcp_and_engine):
+    """Even with no connected workers, ecosystem projects always appear."""
+    mcp, _ = mcp_and_engine
+    result = await _call(mcp, "tm_list_workers")
+    text = result.structured_content["result"]
+    for project in ("leanspecs", "iris-qa", "architrix", "actuatrix", "tubemail"):
+        assert project in text
+    assert "not started" in text
+
+
+async def test_list_workers_groups_roles_under_project(mcp_and_engine):
+    """Two role-scoped workers in the same project render as a grouped tree."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker(
+        "leanspecs-code-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+    )
+    await engine.register_worker(
+        "leanspecs-spec-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+    )
+    result = await _call(mcp, "tm_list_workers")
+    text = result.structured_content["result"]
+    # Project header with role count
+    assert "leanspecs" in text
+    assert "2 roles" in text
+    # Both roles rendered with tree branches
+    assert "├─ " in text
+    assert "└─ " in text
+    assert "leanspecs-code-qm" in text
+    assert "leanspecs-spec-qm" in text
+
+
+async def test_list_workers_single_worker_not_grouped(mcp_and_engine):
+    """A project with one worker renders as a normal row, not a grouped tree."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker(
+        "leanspecs-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+    )
+    result = await _call(mcp, "tm_list_workers")
+    text = result.structured_content["result"]
+    assert "leanspecs-qm" in text
+    assert "2 roles" not in text
+    assert "├─" not in text
+
+
+async def test_send_and_receive(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    send_result = await _call(mcp, "tm_send", worker="w", message="ping")
+    event_id = send_result.structured_content["event_id"]
+    assert event_id
+    recv_result = await _call(mcp, "tm_receive", worker="w")
+    events = recv_result.structured_content["result"]
+    assert len(events) == 1
+    assert events[0]["content"] == "ping"
+    assert events[0]["kind"] == "inbound"
+
+
+async def test_receive_with_cursor(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    first = await _call(mcp, "tm_send", worker="w", message="a")
+    cursor = first.structured_content["event_id"]
+    await _call(mcp, "tm_send", worker="w", message="b")
+    await _call(mcp, "tm_send", worker="w", message="c")
+    recv = await _call(mcp, "tm_receive", worker="w", since=cursor)
+    events = recv.structured_content["result"]
+    assert [e["content"] for e in events] == ["b", "c"]
+
+
+async def test_status_unknown_worker(mcp_and_engine):
+    mcp, _ = mcp_and_engine
+    result = await _call(mcp, "tm_status", worker="nonexistent")
+    assert result.structured_content["state"] == "unknown"
+
+
+async def test_status_idle(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    result = await _call(mcp, "tm_status", worker="w")
+    assert result.structured_content["state"] == "idle"
+    assert result.structured_content["pending_count"] == 0
+
+
+async def test_status_waiting_permission(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    await engine.record_permission_request(
+        "w",
+        PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
+    )
+    result = await _call(mcp, "tm_status", worker="w")
+    assert result.structured_content["state"] == "waiting_permission"
+    assert result.structured_content["pending_count"] == 1
+
+
+async def test_pending_and_respond_permission(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    await engine.record_permission_request(
+        "w",
+        PermissionRequestPayload(
+            request_id="abcde",
+            tool_name="Bash",
+            description="run tests",
+            input_preview="pytest",
+        ),
+    )
+    pending = await _call(mcp, "tm_pending_permissions")
+    entries = pending.structured_content["result"]
+    assert len(entries) == 1
+    assert entries[0]["request_id"] == "abcde"
+
+    resp = await _call(mcp, "tm_respond_permission", worker="w", request_id="abcde", behavior="allow")
+    assert resp.structured_content["ok"] is True
+
+    pending2 = await _call(mcp, "tm_pending_permissions")
+    assert pending2.structured_content["result"] == []
+
+
+async def test_respond_permission_invalid_behavior_rejected_by_schema(mcp_and_engine):
+    """Literal type on `behavior` must reject unknown values at the schema layer."""
+    mcp, _ = mcp_and_engine
+    with pytest.raises(Exception):
+        await _call(
+            mcp,
+            "tm_respond_permission",
+            worker="w",
+            request_id="abcde",
+            behavior="maybe",
+        )
+
+
+async def test_interrupt(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/tmp")
+    result = await _call(mcp, "tm_interrupt", worker="w")
+    assert result.structured_content["ok"] is True
+    events = engine.events_since("w")
+    assert len(events) == 1
+    assert events[0].kind == "interrupt"
+
+
+async def test_get_instructions_returns_server_instructions(mcp_and_engine):
+    """Meta-tool: AI can re-read the server's workflow doc after compaction."""
+    mcp, _ = mcp_and_engine
+    result = await _call(mcp, "get_instructions")
+    text = result.structured_content["result"]
+    assert "TubeMail" in text
+    assert "tm_send" in text
+    assert "tm_list_workers" in text
+
+
+async def test_all_tools_have_distinct_prefixed_names(mcp_and_engine):
+    """Tool-selection test: every orchestration tool is tm_-prefixed so it
+    doesn't collide with tools from other MCP servers loaded alongside us.
+    Meta-tools (get_instructions, refresh_tools) are the two allowed exceptions.
+
+    The exact count isn't the point — the invariant is "every domain tool
+    starts with tm_" and "the meta-tools are present". A lower bound catches
+    accidental deletion of the entire tool layer."""
+    mcp, _ = mcp_and_engine
+    tools = await mcp.list_tools()
+    names = sorted(t.name for t in tools)
+    meta_tools = {"get_instructions", "refresh_tools"}
+    domain_tools = [n for n in names if n not in meta_tools]
+    assert len(domain_tools) >= 12, f"fewer than 12 domain tools: {domain_tools}"
+    for name in domain_tools:
+        assert name.startswith("tm_"), f"domain tool {name!r} missing tm_ prefix"
+    # Ensure meta-tools are present
+    assert meta_tools.issubset(set(names)), f"missing meta-tools: {meta_tools - set(names)}"
+
+
+async def test_tool_descriptions_distinguish_send_from_receive(mcp_and_engine):
+    """Tool-selection sanity: descriptions make tm_send vs tm_receive
+    obviously distinct so an agent picks correctly."""
+    mcp, _ = mcp_and_engine
+    tools = {t.name: t for t in await mcp.list_tools()}
+    send_desc = (tools["tm_send"].description or "").lower()
+    recv_desc = (tools["tm_receive"].description or "").lower()
+    assert "send" in send_desc or "deliver" in send_desc
+    assert "read" in recv_desc or "poll" in recv_desc
+    # Each should name the verb the other lacks
+    assert "read" not in send_desc.split(".")[0]  # first sentence of send isn't about reading
+
+
+async def test_update_wrapper_refuses_when_not_idle(mcp_and_engine):
+    """tm_update_wrapper must not fire /exit at a worker mid-permission-prompt."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.record_permission_request(
+        "w", PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
+    )
+    result = await _call(mcp, "tm_update_wrapper", worker="w")
+    data = result.structured_content
+    assert data.get("state") == "waiting_permission"
+    assert "error" in data
+
+
+async def test_update_wrapper_force_bypasses_idle_check(mcp_and_engine):
+    """force=True must proceed even when the worker is non-idle."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.record_permission_request(
+        "w", PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
+    )
+    result = await _call(mcp, "tm_update_wrapper", worker="w", force=True)
+    data = result.structured_content
+    assert "event_id" in data
+    assert data.get("forced") is True
+
+
+async def test_update_wrapper_refuses_unknown_worker(mcp_and_engine):
+    mcp, _ = mcp_and_engine
+    result = await _call(mcp, "tm_update_wrapper", worker="never-existed")
+    data = result.structured_content
+    assert data.get("state") == "unknown"
+    assert "error" in data
+
+
+async def test_clear_and_send_routes_both_events(mcp_and_engine):
+    """Clear goes to <worker>-manager; message goes to <worker> timeline."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    result = await _call(
+        mcp, "tm_clear_and_send",
+        worker="w", message="new task", delay_s=0.01,
+    )
+    data = result.structured_content
+    assert "clear_event_id" in data
+    assert "message_event_id" in data
+    assert data["routed_to"] == {"clear": "w-manager", "message": "w"}
+    # Message lands on the worker's own timeline (not the manager's).
+    worker_events = engine.events_since("w")
+    assert any(e.content == "new task" for e in worker_events)
+    # Clear lands on the manager timeline with kind=clear.
+    manager_events = engine.events_since("w-manager")
+    assert any(e.meta.get("kind") == "clear" for e in manager_events)
+
+
+async def test_clear_and_send_refuses_when_not_idle(mcp_and_engine):
+    """Same safety gate as tm_update_wrapper — don't /clear mid-permission."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.record_permission_request(
+        "w", PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
+    )
+    result = await _call(
+        mcp, "tm_clear_and_send",
+        worker="w", message="new task", delay_s=0.01,
+    )
+    data = result.structured_content
+    assert data.get("state") == "waiting_permission"
+    assert "error" in data
+
+
+async def test_my_inbox_resolves_self_from_env(mcp_and_engine, monkeypatch):
+    """tm_my_inbox reads TM_WORKER_NAME and returns the caller's timeline."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("iris-qa-qm", "/")
+    await engine.enqueue_inbound("iris-qa-qm", "work order A", {})
+    await engine.enqueue_inbound("iris-qa-qm", "work order B", {})
+    monkeypatch.setenv("TM_WORKER_NAME", "iris-qa-qm")
+    result = await _call(mcp, "tm_my_inbox", limit=10)
+    data = result.structured_content
+    assert data["worker"] == "iris-qa-qm"
+    contents = [e["content"] for e in data["events"] if e["kind"] == "inbound"]
+    assert contents == ["work order A", "work order B"]
+
+
+async def test_my_inbox_errors_when_env_missing(mcp_and_engine, monkeypatch):
+    mcp, _ = mcp_and_engine
+    monkeypatch.delenv("TM_WORKER_NAME", raising=False)
+    result = await _call(mcp, "tm_my_inbox")
+    data = result.structured_content
+    assert "error" in data
+    assert "TM_WORKER_NAME" in data["error"]
+
+
+async def test_my_inbox_honors_limit(mcp_and_engine, monkeypatch):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    for i in range(10):
+        await engine.enqueue_inbound("w", f"msg {i}", {})
+    monkeypatch.setenv("TM_WORKER_NAME", "w")
+    result = await _call(mcp, "tm_my_inbox", limit=3)
+    data = result.structured_content
+    assert len(data["events"]) == 3
+    # Latest 3 — "msg 7", "msg 8", "msg 9"
+    assert [e["content"] for e in data["events"]] == ["msg 7", "msg 8", "msg 9"]

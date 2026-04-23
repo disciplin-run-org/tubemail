@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tubemail-hub"
+version = "0.1.0"
+description = "Orchestration hub routing work between Claude Code sessions via tubemail channel plugin"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+    "fastmcp[tasks]>=2.14",
+    "pydantic>=2.0",
+    "httpx>=0.25",
+    "sse-starlette>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-mock>=3.10",
+    "httpx>=0.25",
+    "black>=23.0",
+    "isort>=5.12",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["tubemail_hub"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
