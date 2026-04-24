@@ -25,7 +25,7 @@ SERVER_INSTRUCTIONS = (
     "TubeMail: orchestration hub for routing work between Claude Code sessions. "
     "Lets an orchestrator session drive other long-running Claude Code sessions "
     "('workers') via the tubemail channel plugin. Workers are native Claude Code "
-    "processes launched with --dangerously-load-development-channels server:tubemail. "
+    "processes launched with --dangerously-load-development-channels server:tubemail-channel. "
     "Each worker registers as <dirname>-qm (or TM_WORKER_NAME-qm if overridden).\n\n"
     "Typical workflow:\n"
     "1. tm_list_workers() to see who is connected.\n"
@@ -160,7 +160,7 @@ claude-tm</pre>
 <p>The worker auto-names itself after the directory it's launched in. The
 <code>claude-tm</code> wrapper script sources <code>.env</code> for
 <code>TUBEMAIL_SECRET</code> and starts <code>claude</code> with
-<code>--dangerously-load-development-channels server:tubemail</code>.</p>
+<code>--dangerously-load-development-channels server:tubemail-channel</code>.</p>
 </body>
 </html>"""
 

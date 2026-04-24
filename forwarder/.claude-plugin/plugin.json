@@ -1,6 +1,6 @@
 {
-  "name": "tubemail",
-  "description": "TubeMail channel — relays events between a Claude Code worker session and the hub via HTTP/SSE.",
+  "name": "tubemail-channel",
+  "description": "TubeMail Channel — relays events between a Claude Code worker session and the TubeMail hub via HTTP/SSE.",
   "version": "0.1.0",
   "keywords": [
     "channel",

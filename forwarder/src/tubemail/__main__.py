@@ -1,6 +1,6 @@
 """Entry point for the tubemail channel plugin.
 
-Spawned by `claude --dangerously-load-development-channels server:tubemail`
+Spawned by `claude --dangerously-load-development-channels server:tubemail-channel`
 as a stdio subprocess of a Claude Code worker session.
 
 Environment variables:

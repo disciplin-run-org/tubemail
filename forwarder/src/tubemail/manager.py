@@ -883,7 +883,7 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
         "claude",
         "--name", session_name,
         "--rc", session_name,
-        "--dangerously-load-development-channels", "server:tubemail",
+        "--dangerously-load-development-channels", "server:tubemail-channel",
         "--plugin-dir", _forwarder_dir,
     ]
     if extra_args:

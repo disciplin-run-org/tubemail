@@ -1,6 +1,6 @@
 """tubemail: Claude Code channel plugin that relays events to TubeMail.
 
-Loaded by `claude --dangerously-load-development-channels server:tubemail`
+Loaded by `claude --dangerously-load-development-channels server:tubemail-channel`
 as a stdio subprocess of a Claude Code worker session. Speaks JSON-RPC over
 stdin/stdout to Claude Code and HTTP/SSE to the TubeMail hub.
 """
