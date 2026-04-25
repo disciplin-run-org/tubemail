@@ -10,6 +10,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
       - name: Bootstrap pip + setuptools
         # `--no-build-isolation` skips the auto-install of build deps,
         # so the runner's Python venv must already have setuptools >=
@@ -19,6 +24,14 @@ jobs:
         run: pip install -e channel/ --no-build-isolation
       - name: Install hub
         run: pip install -e .[dev] --no-build-isolation
+      - name: Build frontend
+        # The SPA fallback test exercises the full create_app() factory,
+        # which only mounts the SPA static files when frontend/dist
+        # exists. Build the bundle here so the test sees a real dist.
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
       - name: Run tests
         run: pytest
 
