@@ -10,6 +10,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Bootstrap pip + setuptools
+        # `--no-build-isolation` skips the auto-install of build deps,
+        # so the runner's Python venv must already have setuptools >=
+        # 65 + wheel for our editable installs to find a build backend.
+        run: pip install --upgrade pip setuptools wheel
       - name: Install channel
         run: pip install -e channel/ --no-build-isolation
       - name: Install hub

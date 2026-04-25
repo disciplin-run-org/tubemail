@@ -1,18 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      // Match the iris-qa / leanspecs convention so this codebase pulls
-      // shared components (Sidebar, HealthCard, AILogCard, etc.) from
-      // shared/frontend/src instead of duplicating them.
-      '@ai-agents/shared-ui': path.resolve(__dirname, '../../shared/frontend/src'),
-    },
-  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

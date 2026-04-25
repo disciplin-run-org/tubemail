@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, useCallback } from 'react'
-import { Sidebar, type SidebarTab } from '@ai-agents/shared-ui'
+import { Sidebar, type SidebarTab } from './components/Sidebar'
 import {
   AuthError, clearBearer, getBearer, getHubSettings, listPendingPermissions,
   listWorkers, setBearer, setRecordingEnabled, subscribeEvents,
