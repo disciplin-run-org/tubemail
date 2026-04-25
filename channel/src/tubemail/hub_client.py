@@ -46,9 +46,14 @@ class HubClient:
         return f"{self._base}/tubemail/{self._worker}{path}"
 
     async def register(self, cwd: str, pid: int | None = None) -> dict[str, Any]:
+        # Include forwarder_version so the roster can display "what code
+        # is this worker actually running?" — without this the channel-
+        # side worker shows up with version='' while only the manager-
+        # side version surfaces, which is misleading.
+        from tubemail import __version__ as _version
         resp = await self._client.post(
             self._url("/register"),
-            json={"cwd": cwd, "pid": pid},
+            json={"cwd": cwd, "pid": pid, "forwarder_version": _version},
         )
         resp.raise_for_status()
         return resp.json()

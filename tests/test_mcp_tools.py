@@ -39,10 +39,10 @@ async def test_list_workers_groups_roles_under_project(mcp_and_engine):
     """Two role-scoped workers in the same project render as a grouped tree."""
     mcp, engine = mcp_and_engine
     await engine.register_worker(
-        "leanspecs-code-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+        "leanspecs-code-tm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
     )
     await engine.register_worker(
-        "leanspecs-spec-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+        "leanspecs-spec-tm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
     )
     result = await _call(mcp, "tm_list_workers")
     text = result.structured_content["result"]
@@ -52,19 +52,19 @@ async def test_list_workers_groups_roles_under_project(mcp_and_engine):
     # Both roles rendered with tree branches
     assert "├─ " in text
     assert "└─ " in text
-    assert "leanspecs-code-qm" in text
-    assert "leanspecs-spec-qm" in text
+    assert "leanspecs-code-tm" in text
+    assert "leanspecs-spec-tm" in text
 
 
 async def test_list_workers_single_worker_not_grouped(mcp_and_engine):
     """A project with one worker renders as a normal row, not a grouped tree."""
     mcp, engine = mcp_and_engine
     await engine.register_worker(
-        "leanspecs-qm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
+        "leanspecs-tm", "/home/jesper/PycharmProjects/ai-agents/leanspecs"
     )
     result = await _call(mcp, "tm_list_workers")
     text = result.structured_content["result"]
-    assert "leanspecs-qm" in text
+    assert "leanspecs-tm" in text
     assert "2 roles" not in text
     assert "├─" not in text
 
@@ -210,35 +210,35 @@ async def test_tool_descriptions_distinguish_send_from_receive(mcp_and_engine):
     assert "read" not in send_desc.split(".")[0]  # first sentence of send isn't about reading
 
 
-async def test_update_wrapper_refuses_when_not_idle(mcp_and_engine):
-    """tm_update_wrapper must not fire /exit at a worker mid-permission-prompt."""
+async def test_update_manager_refuses_when_not_idle(mcp_and_engine):
+    """tm_update_manager must not fire /exit at a worker mid-permission-prompt."""
     mcp, engine = mcp_and_engine
     await engine.register_worker("w", "/")
     await engine.record_permission_request(
         "w", PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
     )
-    result = await _call(mcp, "tm_update_wrapper", worker="w")
+    result = await _call(mcp, "tm_update_manager", worker="w")
     data = result.structured_content
     assert data.get("state") == "waiting_permission"
     assert "error" in data
 
 
-async def test_update_wrapper_force_bypasses_idle_check(mcp_and_engine):
+async def test_update_manager_force_bypasses_idle_check(mcp_and_engine):
     """force=True must proceed even when the worker is non-idle."""
     mcp, engine = mcp_and_engine
     await engine.register_worker("w", "/")
     await engine.record_permission_request(
         "w", PermissionRequestPayload(request_id="abcde", tool_name="Bash"),
     )
-    result = await _call(mcp, "tm_update_wrapper", worker="w", force=True)
+    result = await _call(mcp, "tm_update_manager", worker="w", force=True)
     data = result.structured_content
     assert "event_id" in data
     assert data.get("forced") is True
 
 
-async def test_update_wrapper_refuses_unknown_worker(mcp_and_engine):
+async def test_update_manager_refuses_unknown_worker(mcp_and_engine):
     mcp, _ = mcp_and_engine
-    result = await _call(mcp, "tm_update_wrapper", worker="never-existed")
+    result = await _call(mcp, "tm_update_manager", worker="never-existed")
     data = result.structured_content
     assert data.get("state") == "unknown"
     assert "error" in data
@@ -265,7 +265,7 @@ async def test_clear_and_send_routes_both_events(mcp_and_engine):
 
 
 async def test_clear_and_send_refuses_when_not_idle(mcp_and_engine):
-    """Same safety gate as tm_update_wrapper — don't /clear mid-permission."""
+    """Same safety gate as tm_update_manager — don't /clear mid-permission."""
     mcp, engine = mcp_and_engine
     await engine.register_worker("w", "/")
     await engine.record_permission_request(
@@ -283,13 +283,13 @@ async def test_clear_and_send_refuses_when_not_idle(mcp_and_engine):
 async def test_my_inbox_resolves_self_from_env(mcp_and_engine, monkeypatch):
     """tm_my_inbox reads TM_WORKER_NAME and returns the caller's timeline."""
     mcp, engine = mcp_and_engine
-    await engine.register_worker("iris-qa-qm", "/")
-    await engine.enqueue_inbound("iris-qa-qm", "work order A", {})
-    await engine.enqueue_inbound("iris-qa-qm", "work order B", {})
-    monkeypatch.setenv("TM_WORKER_NAME", "iris-qa-qm")
+    await engine.register_worker("iris-qa-tm", "/")
+    await engine.enqueue_inbound("iris-qa-tm", "work order A", {})
+    await engine.enqueue_inbound("iris-qa-tm", "work order B", {})
+    monkeypatch.setenv("TM_WORKER_NAME", "iris-qa-tm")
     result = await _call(mcp, "tm_my_inbox", limit=10)
     data = result.structured_content
-    assert data["worker"] == "iris-qa-qm"
+    assert data["worker"] == "iris-qa-tm"
     contents = [e["content"] for e in data["events"] if e["kind"] == "inbound"]
     assert contents == ["work order A", "work order B"]
 
@@ -314,3 +314,91 @@ async def test_my_inbox_honors_limit(mcp_and_engine, monkeypatch):
     assert len(data["events"]) == 3
     # Latest 3 — "msg 7", "msg 8", "msg 9"
     assert [e["content"] for e in data["events"]] == ["msg 7", "msg 8", "msg 9"]
+
+
+# ── Recording tools ──────────────────────────────────────────────────────
+
+
+@pytest.fixture
+async def mcp_engine_with_recorder(tmp_path: Path):
+    """Engine with a real RecordingManager wired in."""
+    from tubemail_hub.recorder import RecordingManager
+    rec = RecordingManager(tmp_path / "rec")
+    engine = BridgeEngine(data_dir=tmp_path / "engine", recorder=rec)
+    mcp = FastMCP("tubemail-test")
+    workers_tools.register(mcp, engine)
+    return mcp, engine, rec
+
+
+async def test_recording_toggle_unknown_worker(mcp_engine_with_recorder):
+    mcp, _, _ = mcp_engine_with_recorder
+    result = await _call(mcp, "tm_recording_toggle", worker="ghost", enabled=True)
+    data = result.structured_content
+    assert data["ok"] is False
+    assert "unknown worker" in data["error"]
+
+
+async def test_recording_toggle_starts_and_stops(mcp_engine_with_recorder):
+    mcp, engine, rec = mcp_engine_with_recorder
+    await engine.register_worker("w", "/")
+
+    on = await _call(mcp, "tm_recording_toggle", worker="w", enabled=True)
+    assert on.structured_content["enabled"] is True
+    assert rec.is_recording("w") is True
+
+    off = await _call(mcp, "tm_recording_toggle", worker="w", enabled=False)
+    assert off.structured_content["enabled"] is False
+    assert rec.is_recording("w") is False
+
+
+async def test_recording_status_shows_no_files_until_write(mcp_engine_with_recorder):
+    mcp, engine, _ = mcp_engine_with_recorder
+    await engine.register_worker("w", "/")
+    await _call(mcp, "tm_recording_toggle", worker="w", enabled=True)
+    result = await _call(mcp, "tm_recording_status", worker="w")
+    data = result.structured_content
+    assert data["enabled"] is True
+    # Active file is open but no writes yet.
+    assert data["active_file"] is not None
+    assert len(data["files"]) == 1
+
+
+async def test_get_recording_returns_frames(mcp_engine_with_recorder):
+    mcp, engine, rec = mcp_engine_with_recorder
+    await engine.register_worker("w", "/")
+    await _call(mcp, "tm_recording_toggle", worker="w", enabled=True)
+    rec.write("w", b"hello world\n")
+    rec.write("w", b"second line\n")
+
+    result = await _call(mcp, "tm_get_recording", worker="w", limit=10)
+    data = result.structured_content
+    assert data["truncated"] is False
+    deltas = [f["delta"] for f in data["frames"]]
+    assert any("hello world" in d for d in deltas)
+    assert any("second line" in d for d in deltas)
+
+
+async def test_get_recording_grep_filters(mcp_engine_with_recorder):
+    mcp, engine, rec = mcp_engine_with_recorder
+    await engine.register_worker("w", "/")
+    await _call(mcp, "tm_recording_toggle", worker="w", enabled=True)
+    rec.write("w", b"permission requested: Bash\n")
+    rec.write("w", b"streaming token foo\n")
+    rec.write("w", b"another permission requested: Edit\n")
+
+    result = await _call(mcp, "tm_get_recording", worker="w", grep="permission")
+    data = result.structured_content
+    assert len(data["frames"]) == 2
+    assert all("permission" in f["delta"] for f in data["frames"])
+
+
+async def test_get_recording_truncated_flag(mcp_engine_with_recorder):
+    mcp, engine, rec = mcp_engine_with_recorder
+    await engine.register_worker("w", "/")
+    await _call(mcp, "tm_recording_toggle", worker="w", enabled=True)
+    for i in range(10):
+        rec.write("w", f"line {i}\n".encode())
+    result = await _call(mcp, "tm_get_recording", worker="w", limit=3)
+    data = result.structured_content
+    assert data["truncated"] is True
+    assert len(data["frames"]) == 3

@@ -51,11 +51,27 @@ def _git_state(repo_dir: Path) -> str:
 
 def _full_version() -> str:
     base = _base_version()
-    # __file__ is .../tubemail/__init__.py; go up two to forwarder/, then
+    # __file__ is .../tubemail/__init__.py; go up two to channel/, then
     # its parent which is the monorepo root where the git repo lives.
     repo_dir = Path(__file__).resolve().parent
     git = _git_state(repo_dir)
     return f"{base}{git}"
 
 
-__version__ = _full_version()
+def _runtime_version() -> str:
+    """Stable version + a process-start tag so a re-exec shows up as a
+    different version string in tools that report `forwarder_version`
+    (the web UI roster, `tm_list_workers`). Without this, two
+    consecutive rolls produce identical version strings — code IS
+    fresh, but operators see no signal that anything changed.
+
+    Format: `0.1.0+a3b8020.dirty @22:13` — the time-of-day suffix is
+    short enough to fit the version column and changes on every
+    re-exec, including dev-mode edits where git state stays the same.
+    """
+    import time as _time
+    base = _full_version()
+    return f"{base} @{_time.strftime('%H:%M')}"
+
+
+__version__ = _runtime_version()

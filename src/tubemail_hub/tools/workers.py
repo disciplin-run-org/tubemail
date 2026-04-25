@@ -436,6 +436,26 @@ def register(mcp, engine: BridgeEngine) -> None:
         return {"ok": True, "event_id": event.event_id, "routed_to": manager}
 
     @mcp.tool
+    async def tm_purge_worker(worker: str) -> dict[str, Any]:
+        """Permanently remove a worker from the registry — both the
+        in-memory state and the on-disk file under
+        `/data/tubemail/workers/<worker>.json`.
+
+        Use this to drop stale entries left behind by Claude sessions
+        that exited without re-registering — the registry otherwise
+        grows for the life of the data volume. Companion to the
+        startup auto-purge that drops offline workers > 24h old (and
+        the per-worker delete in the web UI's roster).
+
+        Online workers and ones with pending permissions can still be
+        purged with this tool — it is unconditional. Use
+        `tm_stop` / `tm_interrupt` for live workers; use this only on
+        ones you're sure are dead.
+        """
+        ok = await engine.purge_worker(worker)
+        return {"ok": ok, "worker": worker}
+
+    @mcp.tool
     async def tm_keystroke(worker: str, keys: str) -> dict[str, Any]:
         """Send raw keystrokes to a worker's terminal.
 
@@ -488,12 +508,12 @@ def register(mcp, engine: BridgeEngine) -> None:
         }
 
     @mcp.tool
-    async def tm_update_wrapper(
+    async def tm_update_manager(
         worker: str, force: bool = False
     ) -> dict[str, Any]:
-        """Re-exec a worker's claude-tm Python process to pick up updated source.
+        """Re-exec a worker's tubemail.manager Python process to pick up updated source.
 
-        Use after shipping a change to the tubemail forwarder code (e.g.
+        Use after shipping a change to the tubemail channel code (e.g.
         new manager features) when you don't want to walk to the worker's
         terminal and kill/relaunch it by hand.
 
@@ -505,12 +525,13 @@ def register(mcp, engine: BridgeEngine) -> None:
         into the dialog as text. Pass `force=True` to bypass the check
         (e.g. the worker is genuinely stuck and needs recycling anyway).
 
-        Flow: manager receives `kind=update_wrapper`, types /exit into the
-        claude child, exits python with code 42. The bash wrapper's restart
-        loop sees 42 and re-execs python — which reloads tubemail from
-        disk (editable install picks up new source). `--continue` is added
-        automatically so claude resumes the same conversation; the session
-        name (and role baked into it) is preserved.
+        Flow: manager receives `kind=update_manager`, types /exit into the
+        claude child, exits python with code 42. The claude-tm bash
+        wrapper's restart loop sees 42 and re-execs python — which reloads
+        tubemail from disk (editable install picks up new source).
+        `--continue` is added automatically so claude resumes the same
+        conversation; the session name (and role baked into it) is
+        preserved.
 
         Returns `{event_id, routed_to}` on dispatch, or `{error, state}`
         if the safety gate declined. Update takes several seconds; poll
@@ -528,7 +549,7 @@ def register(mcp, engine: BridgeEngine) -> None:
                 }
         manager = f"{worker}-manager"
         event = await engine.enqueue_inbound(
-            manager, "update_wrapper", {"kind": "update_wrapper"}
+            manager, "update_manager", {"kind": "update_manager"}
         )
         return {
             "event_id": event.event_id,
@@ -562,7 +583,7 @@ def register(mcp, engine: BridgeEngine) -> None:
         Returns event_ids for both the clear and the message so you can
         track them independently.
         """
-        # Safety gate — same rule as tm_update_wrapper
+        # Safety gate — same rule as tm_update_manager
         ws = engine.get_worker(worker)
         state = ws.status_state() if ws is not None else "unknown"
         if state != "idle":
@@ -649,6 +670,95 @@ def register(mcp, engine: BridgeEngine) -> None:
             except (json.JSONDecodeError, ValueError):
                 return {"raw": health_events[-1].content}
         return {"error": "manager did not respond within 5s", "child_alive": "unknown"}
+
+    # ── Recording tools ──────────────────────────────────────────────────
+
+    @mcp.tool
+    async def tm_recording_toggle(
+        worker: str, enabled: bool
+    ) -> dict[str, Any]:
+        """Turn pty-output recording on or off for a single worker.
+
+        When on, every byte the worker's manager emits is teed to two files
+        on the hub: an asciinema `.cast` (full fidelity, replayable) and a
+        `.frames.jsonl` (ANSI-stripped text frames, what `tm_get_recording`
+        reads). Files rotate by size; older recordings are GC'd.
+
+        New workers inherit the global default (set on /settings) at first
+        register. This tool overrides the per-worker flag and persists it
+        across hub restarts. Returns the resulting status snapshot.
+        """
+        ws = engine.get_worker(worker)
+        if ws is None:
+            return {"ok": False, "error": f"unknown worker: {worker!r}"}
+        ok = await engine.set_recording_enabled(worker, enabled)
+        rec = engine.recorder
+        status = rec.status(worker) if rec is not None else {
+            "worker": worker, "enabled": enabled, "active_file": None, "files": [],
+        }
+        return {"ok": ok, **status}
+
+    @mcp.tool
+    def tm_recording_status(worker: str) -> dict[str, Any]:
+        """Return the current recording state for a worker.
+
+        Includes the on/off flag, the name of the active cast file (if
+        recording is on), and metadata for every file on disk for this
+        worker (path, size, modified, active). Use this before calling
+        `tm_get_recording` so you know which files to slice.
+        """
+        rec = engine.recorder
+        ws = engine.get_worker(worker)
+        if rec is None:
+            return {
+                "worker": worker,
+                "enabled": ws.recording_enabled if ws else False,
+                "active_file": None,
+                "files": [],
+                "note": "recorder not configured on this hub",
+            }
+        return rec.status(worker)
+
+    @mcp.tool
+    def tm_get_recording(
+        worker: str,
+        since: str | None = None,
+        until: str | None = None,
+        grep: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Read recorded text frames for a worker, filtered by time + regex.
+
+        Each frame is `{"t": ISO-8601 UTC, "delta": "<text>"}` — one entry
+        per chunk the manager streamed, with ANSI escape codes removed so
+        the text is grep-friendly. Frames span every `.frames.jsonl` file
+        on disk for the worker in chronological order.
+
+        Args:
+          since: Inclusive lower bound, ISO-8601 (e.g. "2026-04-25T12:00:00Z").
+          until: Exclusive upper bound, ISO-8601.
+          grep: Regex matched against the `delta` field.
+          limit: Max frames returned. Default 200; pass tighter `since` to page.
+
+        Returns `{worker, frames, truncated}` where `truncated` is True if
+        the slice held more than `limit` and the oldest in-window frames
+        were returned.
+        """
+        rec = engine.recorder
+        if rec is None:
+            return {
+                "worker": worker,
+                "frames": [],
+                "truncated": False,
+                "error": "recorder not configured on this hub",
+            }
+        frames = rec.read_frames(
+            worker, since=since, until=until, grep=grep, limit=limit + 1,
+        )
+        truncated = len(frames) > limit
+        if truncated:
+            frames = frames[:limit]
+        return {"worker": worker, "frames": frames, "truncated": truncated}
 
     @mcp.tool
     async def tm_screenshot(worker: str, max_lines: int = 50) -> str:

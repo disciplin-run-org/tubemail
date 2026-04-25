@@ -131,3 +131,41 @@ def test_missing_secret_returns_503(client: TestClient, monkeypatch):
         headers={"Authorization": "Bearer anything"},
     )
     assert resp.status_code == 503
+
+
+def test_register_rejects_path_traversal_worker_name(client: TestClient, auth_headers):
+    """Worker-name path traversal is refused with 400 at the HTTP layer.
+
+    Regression test for the 2026-04-24 security review finding: the HTTP
+    layer must reject names like `..` or `a/b` before the engine ever
+    sees them.
+    """
+    for bad in ["..", "../evil", "a/b"]:
+        resp = client.post(
+            f"/tubemail/{bad}/register",
+            json={"cwd": "/tmp"},
+            headers=auth_headers,
+        )
+        # FastAPI's path converter rejects `/` with a 404; `..` hits our
+        # validator and returns 400. Both are refusals; neither reaches
+        # engine.register_worker.
+        assert resp.status_code in (400, 404), (
+            f"worker name {bad!r} must be refused, got {resp.status_code}"
+        )
+
+
+def test_bearer_compare_is_constant_time(client: TestClient, secret: str):
+    """Regression test for the 2026-04-24 timing-attack finding.
+
+    We can't measure timing reliably in unit tests, but we can assert the
+    implementation uses `hmac.compare_digest`. This catches accidental
+    regressions back to `==`.
+    """
+    import inspect
+
+    from tubemail_hub.bridge import http as http_mod
+
+    src = inspect.getsource(http_mod._check_auth)
+    assert "compare_digest" in src, "bearer comparison must use hmac.compare_digest"
+    # The old `!=` comparison must not reappear against `secret` directly.
+    assert "!= secret" not in src, "non-constant-time `!= secret` must not return"

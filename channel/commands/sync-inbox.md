@@ -47,7 +47,7 @@ live channel event — so you need to pull it explicitly.
 ## When to use this
 
 - Whenever you've been restarted via `--continue` — the restart reason
-  includes tm_update_wrapper, tm_restart, a crash-recovery loop, and the
+  includes tm_update_manager, tm_restart, a crash-recovery loop, and the
   user manually exiting and re-launching `claude-tm`.
 - Specifically NOT on first session startup (no restart window to catch
   up on — no missed events possible).
@@ -81,12 +81,12 @@ Or if all caught up:
 ## Why this exists
 
 The claude-tm architecture has a small window where inbound events can
-fall through the cracks: when the forwarder's SSE subscription is torn
+fall through the cracks: when the channel's SSE subscription is torn
 down (restart, crash, network blip) and re-established, the hub has the
 events on disk but the channel plugin doesn't replay them into the
 conversation. The hub's persisted timeline is the authoritative "what
 arrived" record. This command is how a restarted worker reconciles.
 
-Cheap alternative to forwarder-side event replay — the reasoning happens
+Cheap alternative to channel-side event replay — the reasoning happens
 at the worker's Claude level, visible in the transcript, using context
 `--continue` already provides.
