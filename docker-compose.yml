@@ -9,6 +9,19 @@ services:
       - TUBEMAIL_SECRET=${TUBEMAIL_SECRET:?TUBEMAIL_SECRET is required}
     volumes:
       - tubemail-data:/data
+      # Live-reload: bind-mount host source over the editable-install target
+      # (Dockerfile uses `pip install -e .`). Uvicorn --reload in entrypoint.sh
+      # watches /app/src/tubemail_hub, so edits auto-restart the server
+      # without a rebuild.
+      - ./src:/app/src:ro
+      - ./VERSION:/app/VERSION:ro
+      # Frontend bundle: mount the host's built dist over the image's so
+      # running `npm run build` on the host (or `vite` watch) updates the
+      # UI served at / without rebuilding the image. Host path doesn't
+      # exist until first `vite build` — compose creates an empty dir
+      # there, in which case the server falls back to the legacy landing
+      # page until the real dist appears.
+      - ./frontend/dist:/app/frontend/dist:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
       interval: 30s

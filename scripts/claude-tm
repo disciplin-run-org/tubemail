@@ -1,25 +1,26 @@
 #!/bin/bash
 # claude-tm — managed Claude Code worker session wired into TubeMail.
 #
-# Sources the monorepo .env (to get TUBEMAIL_SECRET) and runs `claude`
-# inside a Python process manager that auto-restarts on crash and accepts
-# SIGUSR1 for on-demand restarts (new tools, CLAUDE.md changes, hangs).
+# Thin bash wrapper: sources the monorepo .env (to get TUBEMAIL_SECRET)
+# and runs `claude` inside the Python process manager (tubemail.manager)
+# which auto-restarts on crash and accepts SIGUSR1 for on-demand restarts
+# (new tools, CLAUDE.md changes, hangs).
 #
 # Install (one-time):
-#     pip install -e tubemail/forwarder/ --no-build-isolation
+#     pip install -e tubemail/channel/ --no-build-isolation
 #     ln -s "$(pwd)/tubemail/scripts/claude-tm" ~/.local/bin/claude-tm
 #
 # Usage:
-#     cd /path/to/leanspecs && claude-tm                 → leanspecs-qm
-#     cd /path/to/leanspecs && claude-tm --role spec     → leanspecs-spec-qm
-#     TM_WORKER_NAME=leanspecs-b claude-tm               → leanspecs-b-qm
+#     cd /path/to/leanspecs && claude-tm                 → leanspecs-tm
+#     cd /path/to/leanspecs && claude-tm --role spec     → leanspecs-spec-tm
+#     TM_WORKER_NAME=leanspecs-b claude-tm               → leanspecs-b-tm
 #     claude-tm --role spec --continue                   # extra args pass through
 #
 # Role flag lets multiple concurrent sessions for the same project coexist
 # under distinct names (e.g. one working on code, another on specs).
 #
 # Restart a running worker (from any terminal):
-#     kill -USR1 $(cat /tmp/claude-tm-leanspecs-qm.pid)
+#     kill -USR1 $(cat /tmp/claude-tm-leanspecs-tm.pid)
 #
 # The PID file at /tmp/claude-tm-<name>.pid lets the orchestrator find and
 # signal this process. The Python manager handles SIGUSR1 by terminating
@@ -72,11 +73,11 @@ done
 
 BASE="$(basename "$PWD")"
 if [[ -n "${TM_WORKER_NAME:-}" ]]; then
-    SESSION_NAME="${TM_WORKER_NAME}-qm"
+    SESSION_NAME="${TM_WORKER_NAME}-tm"
 elif [[ -n "$ROLE" ]]; then
-    SESSION_NAME="${BASE}-${ROLE}-qm"
+    SESSION_NAME="${BASE}-${ROLE}-tm"
 else
-    SESSION_NAME="${BASE}-qm"
+    SESSION_NAME="${BASE}-tm"
 fi
 
 # Refuse to start if a live process already holds the pidfile — prevents
@@ -108,7 +109,7 @@ fi
 # startup (above) and consumed into $SESSION_NAME. The variable persists
 # for the life of this bash process, so every re-exec of python passes
 # the same session name. Claude launches with `--name $SESSION_NAME`,
-# which encodes the role (e.g. leanspecs-spec-qm). No explicit --role
+# which encodes the role (e.g. leanspecs-spec-tm). No explicit --role
 # flag needs to flow through the restart loop; role is implicit in the
 # identity that propagates.
 TM_MAX_CRASH_RESTARTS="${TM_MAX_CRASH_RESTARTS:-5}"
@@ -133,7 +134,7 @@ while true; do
             break
             ;;
         42)
-            echo "claude-tm: wrapper-update signal (rc=42), re-execing python" >&2
+            echo "claude-tm: manager-update signal (rc=42), re-execing python" >&2
             crash_count=0
             if ! _has_continue_flag "${PASSTHRU_ARGS[@]}"; then
                 PASSTHRU_ARGS+=(--continue)

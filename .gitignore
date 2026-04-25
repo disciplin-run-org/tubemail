@@ -32,8 +32,6 @@ env/
 .env
 .env.local
 
-# jjstack session artifacts
-/jjstack/
-
 # Claude Code local session state
 /.claude/
+.gstack/

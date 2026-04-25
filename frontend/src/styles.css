@@ -1,0 +1,1011 @@
+/* TubeMail — design tokens inherit the ecosystem palette (leanspecs, iris-qa)
+   plus tubemail-specific extensions for terminal surfaces. */
+
+:root {
+  --primary: #1d4ed8;
+  --ai: #7c3aed;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #991b1b;
+  --offline-clean: #9ca3af;
+
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-700: #374151;
+  --gray-900: #111827;
+
+  --terminal-bg: #0d1117;
+  --terminal-fg: #c9d1d9;
+
+  --bg: white;
+  --bg-elevated: var(--gray-50);
+  --border: var(--gray-200);
+  --text: var(--gray-700);
+  --text-strong: var(--gray-900);
+
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --radius: 4px;
+  --radius-lg: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, pre {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0;
+}
+
+.sidebar-brand {
+  padding: 0 1rem 1rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-strong);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pushes the bottom-tab section to the bottom of the sidebar.
+   Rendered between the main and bottom tabs by the shared Sidebar. */
+.sidebar-spacer { flex: 1; }
+
+.sidebar-item {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  color: var(--gray-500);
+  border-left: 3px solid transparent;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.sidebar-item:hover { background: var(--gray-100); color: var(--text); }
+.sidebar-item.active {
+  color: var(--primary);
+  border-left-color: var(--primary);
+  font-weight: 600;
+  background: var(--bg);
+}
+
+/* Optional count badge — used by the Permissions tab. Style matches
+   the leanspecs/iris-qa visual language so the shared Sidebar
+   component stays themeable per project. */
+.sidebar-badge {
+  background: var(--ai);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+
+.header-strip {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--gray-500);
+  font-size: 0.8125rem;
+}
+
+.header-strip .title {
+  font-weight: 600;
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
+/* ── Roster ─────────────────────────────────────────────────────────────── */
+/* Six-column layout, parent-grouped, mirrors the tm_list_workers MCP
+   tool table:
+     1. dot (SSE)            — 14px
+     2. name                 — flexible
+     3. mgr (manager status) — 28px
+     4. version              — auto
+     5. state badge          — auto
+     6. directory            — flexible
+     7. trash button         — 28px (only on offline rows) */
+
+.roster-table {
+  display: grid;
+  /* col 1: spacer (held the old SSE dot; kept for parent-group folder icon).
+     col 2: worker name.
+     col 3: manager up/down dot.
+     col 4: forwarder version.
+     col 5: state badge.
+     col 6: cwd.
+     col 7: context % ("Ctx" column).
+     col 8: recording toggle.
+     col 9: trash button (offline rows only). */
+  grid-template-columns: 28px minmax(180px, 2fr) 28px auto auto minmax(120px, 1.5fr) 48px 28px 28px;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.roster-row .ctx {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.roster-header-row,
+.roster-row,
+.roster-project-header {
+  display: contents;
+}
+
+.roster-header-row > span {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray-500);
+  font-weight: 600;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Sortable header cells. The arrow icon is faint when the column isn't
+   the active sort and full-strength when it is; hover bumps the cell
+   so the click affordance is obvious. */
+.roster-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius);
+  padding: 0 4px;
+  margin: 0 -4px;
+}
+.roster-sort-header > svg {
+  opacity: 0.35;
+  transition: opacity 0.1s ease-in-out;
+}
+.roster-sort-header.active > svg {
+  opacity: 1;
+  color: var(--text-strong);
+}
+.roster-sort-header:hover {
+  background: var(--gray-100);
+  color: var(--text-strong);
+}
+.roster-sort-header:hover > svg {
+  opacity: 1;
+}
+.roster-sort-header:focus-visible {
+  outline: 2px solid var(--primary);
+}
+
+.roster-project-header > span,
+.roster-project-header > .proj-name {
+  padding: 0.5rem 0 0.25rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.roster-project-header .proj-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-500);
+}
+.roster-project-header .proj-roles {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.roster-row > * {
+  padding: 0.375rem 0;
+  cursor: pointer;
+}
+.roster-row:hover > * { background: var(--gray-50); }
+
+.roster-row.indented > .name {
+  padding-left: 0;
+  position: relative;
+}
+.roster-row.indented > .name::before {
+  content: '↳ ';
+  color: var(--gray-400);
+  margin-right: 4px;
+  font-family: var(--font-mono);
+}
+
+.roster-row .name {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.roster-row .mgr {
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.roster-row .version {
+  color: var(--gray-500);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.roster-row .cwd {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-action {
+  background: transparent;
+  border: 0;
+  padding: 2px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--gray-400);
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+}
+.row-action:hover {
+  background: rgba(153,27,27,0.1);
+  color: var(--danger);
+}
+
+/* Recording toggle: red when on (a session-record cue users associate
+   with REC indicators), faded gray when off. Hover stays gray-tinted
+   instead of red so it doesn't share the trash button's "you're about
+   to lose data" affordance. */
+.row-action.row-action-rec {
+  color: var(--gray-300);
+}
+.row-action.row-action-rec.on {
+  color: var(--danger);
+}
+.row-action.row-action-rec:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+.row-action.row-action-rec.on:hover {
+  background: rgba(153,27,27,0.1);
+  color: var(--danger);
+}
+.row-action.row-action-rec[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── State badge ────────────────────────────────────────────────────────── */
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.state-badge.idle          { background: rgba(22,163,74,0.1);  color: var(--success); }
+.state-badge.busy          { background: rgba(217,119,6,0.12); color: var(--warning); }
+.state-badge.waiting       { background: rgba(124,58,237,0.12);color: var(--ai); }
+.state-badge.offline       { background: rgba(153,27,27,0.10); color: var(--danger); }
+.state-badge.offline-clean { background: var(--gray-100);      color: var(--offline-clean); }
+.state-badge.unknown       { background: var(--gray-100);      color: var(--gray-500); }
+
+.state-badge svg { width: 12px; height: 12px; }
+
+/* `busy` icon spin — respect reduced motion */
+@keyframes spin { to { transform: rotate(360deg); } }
+.state-badge.busy svg { animation: spin 1.6s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .state-badge.busy svg { animation: none; }
+}
+
+/* ── Card (matches shared-ui Card aesthetic) ────────────────────────────── */
+
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  color: var(--text-strong);
+  margin-bottom: 0.25rem;
+}
+
+.card h3 {
+  font-size: 0.9rem;
+  color: var(--text-strong);
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.card .hint {
+  color: var(--gray-500);
+  font-size: 0.8125rem;
+}
+
+/* ── Empty / loading states ─────────────────────────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--gray-500);
+}
+
+.empty-state svg { color: var(--gray-400); margin-bottom: 0.5rem; }
+.empty-state .title { font-size: 1rem; font-weight: 500; color: var(--gray-700); }
+.empty-state .hint { font-size: 0.8125rem; margin-top: 0.25rem; }
+
+.auth-gate {
+  max-width: 400px;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.auth-gate h2 { margin-bottom: 0.75rem; color: var(--text-strong); }
+.auth-gate p { margin-bottom: 1rem; font-size: 0.8125rem; color: var(--gray-500); }
+.auth-gate input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+.auth-gate button {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--primary);
+  color: white;
+  border: 0;
+  border-radius: var(--radius);
+  font-weight: 500;
+  cursor: pointer;
+}
+.auth-gate button:hover { opacity: 0.9; }
+.auth-gate .error { color: var(--danger); font-size: 0.8125rem; margin-top: 0.5rem; }
+
+.auth-gate code {
+  background: var(--gray-100);
+  padding: 1px 4px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.auth-gate-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.auth-gate-hint {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  margin-bottom: 0.75rem;
+}
+
+.auth-gate-help {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+.auth-gate-help summary {
+  cursor: pointer;
+  user-select: none;
+}
+.auth-gate-help summary:hover { color: var(--text); }
+.auth-gate-help p { margin-top: 0.5rem; line-height: 1.5; }
+
+/* ── Permission Inbox ───────────────────────────────────────────────────── */
+
+.permission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  outline: none;
+}
+
+.permission-list:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.permission-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.permission-row:hover { background: var(--gray-50); }
+.permission-row.focused {
+  border-left-color: var(--primary);
+  background: var(--gray-50);
+}
+.permission-row.overdue { border-left-color: var(--danger); }
+.permission-row.queued { opacity: 0.55; }
+
+.permission-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+}
+
+.permission-row-main .worker {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.permission-row-main .tool {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--primary);
+  background: rgba(29,78,216,0.08);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+}
+
+.permission-row-main .desc {
+  color: var(--gray-500);
+  font-size: 0.8125rem;
+}
+
+.permission-row-main .age {
+  margin-left: auto;
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.permission-row-main .age.overdue {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.permission-input-preview {
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.permission-row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--gray-700);
+  background: var(--gray-200);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+}
+
+.permission-hint {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.permission-error {
+  color: var(--danger);
+  background: rgba(153,27,27,0.05);
+  border: 1px solid rgba(153,27,27,0.25);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+/* ── Undo toasts ────────────────────────────────────────────────────────── */
+
+.toast-stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  z-index: 100;
+}
+
+.toast {
+  background: var(--text-strong);
+  color: white;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: toast-slide-in 0.15s ease-out;
+}
+
+.toast.deny { background: var(--danger); }
+.toast.allow { background: var(--success); }
+
+.toast button {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.toast button:hover { background: rgba(255,255,255,0.35); }
+
+@keyframes toast-slide-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+/* ── Flow Editor ────────────────────────────────────────────────────────── */
+
+.flow-editor {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1rem;
+  height: calc(100vh - 140px);
+  min-height: 400px;
+}
+
+.flow-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.flow-list-header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--text-strong);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.icon-btn {
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--gray-500);
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+}
+.icon-btn:hover { background: var(--gray-200); color: var(--text); }
+
+.flow-list ul { list-style: none; overflow-y: auto; }
+.flow-list li {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  font-size: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.flow-list li:hover { background: var(--gray-100); }
+.flow-list li.active {
+  border-left-color: var(--primary);
+  background: var(--bg);
+  font-weight: 500;
+}
+.flow-list .flow-name { color: var(--text-strong); }
+.flow-list .flow-last-run {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+}
+.flow-list-empty {
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--gray-500);
+}
+
+.flow-editor-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  background: var(--bg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.flow-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.flow-editor-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+}
+
+.flow-editor-form label > span:first-child {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.flow-editor-form .hint {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+}
+
+.flow-editor-form input[type="text"],
+.flow-editor-form select,
+.flow-editor-form textarea {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  background: var(--bg);
+  color: var(--text);
+}
+.flow-editor-form textarea {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  resize: vertical;
+  min-height: 140px;
+}
+.flow-editor-form input[disabled] {
+  background: var(--gray-100);
+  color: var(--gray-500);
+}
+
+.flow-editor-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-primary, .btn-secondary, .btn-danger {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-primary  { background: var(--primary); color: white; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: var(--gray-200); color: var(--text); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger   { background: transparent; color: var(--danger); border: 1px solid var(--danger); margin-left: auto; }
+.btn-danger:hover { background: rgba(153,27,27,0.08); }
+
+.run-log {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.run-log-header {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 0.5rem;
+}
+.run-log-header .finished { color: var(--success); font-weight: 400; }
+
+.run-event {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+}
+.run-event .kind {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--gray-200);
+  color: var(--gray-700);
+}
+.run-event.kind-outbound .kind { background: rgba(22,163,74,0.15); color: var(--success); }
+.run-event.kind-permission_request .kind { background: rgba(124,58,237,0.15); color: var(--ai); }
+.run-event.kind-inbound .kind { background: rgba(29,78,216,0.12); color: var(--primary); }
+.run-event .ts { color: var(--gray-500); font-size: 0.75rem; font-family: var(--font-mono); }
+.run-event pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ── Terminal Pane ──────────────────────────────────────────────────────── */
+
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--terminal-bg);
+  height: calc(100vh - 140px);
+  min-height: 400px;
+  position: relative;
+}
+
+/* Popout window — no sidebar / header strip / page padding. The host
+   fills the entire viewport so the terminal pane inside it can grow
+   to the real window height instead of relying on the embedded mode's
+   140px-subtraction calc. */
+.popout-host {
+  height: 100vh;
+  width: 100vw;
+  padding: 0.5rem;
+  display: flex;
+  box-sizing: border-box;
+}
+.popout-host > .terminal-pane {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.terminal-chrome {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--gray-900);
+  color: var(--terminal-fg);
+  border-bottom: 1px solid #30363d;
+  font-size: 0.8125rem;
+}
+.terminal-chrome .title { font-weight: 500; }
+
+.terminal-chrome-left, .terminal-chrome-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.terminal-chrome .back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.08);
+  border: 0;
+  color: var(--terminal-fg);
+  padding: 3px 8px 3px 6px;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 500;
+}
+.terminal-chrome .back-btn:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+.terminal-chrome-right .icon-btn { color: var(--gray-400); }
+.terminal-chrome-right .icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--terminal-fg);
+}
+
+.terminal-chrome .pill.warn {
+  background: rgba(217,119,6,0.15);
+  color: var(--warning);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+}
+
+.terminal-host { flex: 1; padding: 4px 6px; background: var(--terminal-bg); }
+.terminal-host .xterm { height: 100%; }
+
+.terminal-disconnected {
+  background: rgba(153,27,27,0.15);
+  border-bottom: 1px solid var(--danger);
+  color: var(--terminal-fg);
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.terminal-disconnected .btn-secondary { background: rgba(255,255,255,0.15); color: white; }
+.terminal-disconnected .btn-secondary:hover { background: rgba(255,255,255,0.3); }
+
+.terminal-zoom-indicator {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-size: 0.7rem;
+  color: var(--gray-500);
+  background: rgba(0,0,0,0.25);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  pointer-events: none;
+  font-family: var(--font-mono);
+}
+
+/* Connecting overlay — sits ABOVE the terminal, light background so it
+   reads as "we haven't entered terminal mode yet". Disappears the
+   moment the first byte arrives from the manager. */
+.terminal-connecting {
+  position: absolute;
+  inset: 33px 0 0 0;  /* below the chrome strip */
+  background: rgba(248,250,252,0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.terminal-connecting-card {
+  max-width: 520px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.terminal-connecting-card .title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 0.5rem;
+}
+
+.terminal-connecting-card p {
+  margin-bottom: 0.5rem;
+}
+
+.terminal-connecting-card code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--gray-100);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text);
+}
+
+.terminal-connecting-card .btn-primary {
+  margin-top: 0.5rem;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .app-layout { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    padding: 0.5rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-brand { padding: 0 1rem 0 0; border-bottom: 0; margin-bottom: 0; }
+  .sidebar-nav { flex-direction: row; flex: 1; }
+  .sidebar-item { border-left: 0; border-bottom: 3px solid transparent; }
+  .sidebar-item.active { border-left: 0; border-bottom-color: var(--primary); }
+}

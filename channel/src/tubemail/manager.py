@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import pty
+import queue
 import re
 import select
 import signal
@@ -69,6 +70,29 @@ def _normalize_pty_tail(tail: bytes) -> bytes:
     )
 
 
+# `context\s+(\d+)%` shows up in claude's TUI status bar. Match the
+# normalized form (no spaces) so it survives whatever ANSI/wrapping the
+# screen rendered.
+_CONTEXT_PCT_RE = re.compile(rb"context(\d{1,3})%")
+
+
+def _parse_context_pct(tail: bytes) -> int | None:
+    """Return the most recent context-window percent in a normalized
+    pty tail, or None if no match. Multiple matches are possible while
+    redraws overlap; pick the LAST one because newer text is appended
+    later in the buffer."""
+    matches = _CONTEXT_PCT_RE.findall(_normalize_pty_tail(tail))
+    if not matches:
+        return None
+    try:
+        pct = int(matches[-1])
+    except ValueError:
+        return None
+    if 0 <= pct <= 100:
+        return pct
+    return None
+
+
 def _contains_rate_limit(tail: bytes) -> bool:
     return _RATE_LIMIT_MARKER in _normalize_pty_tail(tail)
 
@@ -89,11 +113,11 @@ def _logfile_path(session_name: str) -> Path:
 
 # Exit code meanings for the bash restart-loop in scripts/claude-tm:
 #   0 = clean exit (user typed /exit) — bash exits too
-#   EXIT_UPDATE_WRAPPER (42) = re-exec the python manager to pick up updated
+#   EXIT_UPDATE_MANAGER (42) = re-exec the python manager to pick up updated
 #       tubemail source. bash adds --continue so claude resumes the same
 #       conversation. Session name + role are unchanged.
 #   anything else = crash; bash restarts up to a bounded count.
-EXIT_UPDATE_WRAPPER = 42
+EXIT_UPDATE_MANAGER = 42
 
 
 # /mcp dialog helpers (pure functions for testability) ─────────────────────
@@ -147,6 +171,12 @@ class _PtyChild:
         self._screen_buf = bytearray()
         self._screen_buf_max = 32768  # 32KB of recent output
         self._screen_lock = threading.Lock()
+        # Optional live-stream tap: pump_io writes every chunk read from
+        # the pty master to this queue if attached. The web-UI bridge
+        # consumes from here. Dropping bytes is preferable to blocking
+        # the pty reader, so the queue is bounded and oldest is dropped
+        # on overflow.
+        self._stream_queue: queue.Queue[bytes] | None = None
         # Rate-limit auto-retry state: Anthropic occasionally 429s with
         # "API Error: Server is temporarily limiting requests". We detect
         # it in the pty output and type "continue" after a progressive
@@ -217,6 +247,66 @@ class _PtyChild:
         """Send raw bytes to the child's stdin."""
         if self._master_fd is not None:
             os.write(self._master_fd, data)
+
+    def attach_stream(self) -> "object":
+        """Atomically snapshot the current screen and start streaming.
+
+        Returns (initial_bytes, queue). Caller posts initial_bytes to
+        the consumer to render the existing screen, then drains queue
+        for live updates. Both are taken under one lock so the boundary
+        is exact — no byte appears in both.
+        """
+        with self._screen_lock:
+            initial = bytes(self._screen_buf)
+            if self._stream_queue is None:
+                self._stream_queue = queue.Queue(maxsize=1024)
+            q = self._stream_queue
+        return initial, q
+
+    def detach_stream(self) -> None:
+        """Stop the live-stream tap. Bytes from pump_io are no longer
+        copied to the queue. Idempotent."""
+        with self._screen_lock:
+            self._stream_queue = None
+
+    def pty_size(self) -> tuple[int, int] | None:
+        """Return (cols, rows) of the pty master, or None if not open."""
+        if self._master_fd is None:
+            return None
+        try:
+            winsize = fcntl.ioctl(
+                self._master_fd, termios.TIOCGWINSZ, b"\x00" * 8
+            )
+            rows, cols, _, _ = struct.unpack("HHHH", winsize)
+            return cols, rows
+        except OSError:
+            return None
+
+    def trigger_redraw(self) -> None:
+        """Force the slave-side application to redraw by toggling the
+        pty size. TUIs (Claude's Ink, vim, htop, …) redraw on SIGWINCH;
+        a one-row delta is enough to provoke it without a long visual
+        flicker. Used on web-UI attach so the cursor lands at the real
+        terminal cursor position instead of at the end of whatever
+        bytes happened to be in the screen buffer.
+        """
+        if self._master_fd is None:
+            return
+        size = self.pty_size()
+        if size is None:
+            return
+        cols, rows = size
+        try:
+            # Briefly drop one row, then restore. The slave receives
+            # SIGWINCH twice; the second one with the original size
+            # leaves the pty back where it was.
+            tmp = struct.pack("HHHH", max(rows - 1, 1), cols, 0, 0)
+            full = struct.pack("HHHH", rows, cols, 0, 0)
+            fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, tmp)
+            time.sleep(0.02)
+            fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, full)
+        except OSError as e:
+            logger.debug("trigger_redraw failed: %s", e)
 
     def _get_screen_text(self) -> str:
         """Thread-safe ANSI-stripped snapshot of the current screen buffer."""
@@ -398,11 +488,26 @@ class _PtyChild:
                             break
                         os.write(sys.stdout.fileno(), data)
 
-                        # Feed rolling screen buffer for screenshots
+                        # Feed rolling screen buffer for screenshots AND
+                        # the live-stream tap (web-UI bridge) under one
+                        # lock so the snapshot+queue handoff during
+                        # attach is atomic.
                         with self._screen_lock:
                             self._screen_buf.extend(data)
                             if len(self._screen_buf) > self._screen_buf_max:
                                 self._screen_buf = self._screen_buf[-self._screen_buf_max:]
+                            q = self._stream_queue
+                        if q is not None:
+                            try:
+                                q.put_nowait(data)
+                            except queue.Full:
+                                # Drop oldest, push new — terminal data
+                                # is realtime; old bytes are useless.
+                                try:
+                                    q.get_nowait()
+                                    q.put_nowait(data)
+                                except (queue.Empty, queue.Full):
+                                    pass
 
                         # Auto-accept: check only the recent screen tail.
                         # Timing matters: we delay 0.3s after each auto-accept
@@ -580,7 +685,23 @@ class _ManagerChannelListener:
         self._child_start_time: float = 0.0
         self._restart_requested = False
         self._stop_requested = False
-        self._update_wrapper_requested = False
+        self._update_manager_requested = False
+        # pty-bridge streaming state (v1 of the Integrated Terminal cap).
+        # When a browser attaches via the WS bridge, the hub fans pty_attach
+        # here; we spawn a background thread that copies pty master bytes
+        # to POST /tubemail/<worker>/pty-out in batches.
+        self._pty_stream_stop: threading.Event | None = None
+        self._pty_stream_thread: threading.Thread | None = None
+        # Set when pty_attach arrives before the pty child is ready
+        # (e.g. between manager re-exec and claude startup). Cleared in
+        # set_child() once we kick off the deferred stream, or in
+        # _stop_pty_stream() if the operator detaches first.
+        self._pty_attach_pending: bool = False
+        # Last context-pct value we POSTed to the hub. Used to suppress
+        # repeated POSTs when the parsed value hasn't changed. None
+        # means "never posted yet" — the next non-None parse will fire.
+        self._last_context_pct: int | None = None
+        self._context_pct_thread: threading.Thread | None = None
 
     @property
     def restart_requested(self) -> bool:
@@ -591,22 +712,66 @@ class _ManagerChannelListener:
         return self._stop_requested
 
     @property
-    def update_wrapper_requested(self) -> bool:
-        return self._update_wrapper_requested
+    def update_manager_requested(self) -> bool:
+        return self._update_manager_requested
 
     def clear_flags(self) -> None:
         self._restart_requested = False
         self._stop_requested = False
-        self._update_wrapper_requested = False
+        self._update_manager_requested = False
 
     def set_child(self, child: _PtyChild | None) -> None:
         self._child = child
         self._child_start_time = time.time() if child else 0.0
+        # If a pty client attached while the child was restarting, kick
+        # off the stream now that the new pty master exists.
+        if child is not None and getattr(self, "_pty_attach_pending", False):
+            logger.info("set_child: starting deferred pty stream")
+            self._pty_attach_pending = False
+            self._start_pty_stream()
 
     def start(self) -> None:
         self._register()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        self._context_pct_thread = threading.Thread(
+            target=self._context_pct_loop, daemon=True,
+        )
+        self._context_pct_thread.start()
+
+    def _context_pct_loop(self) -> None:
+        """Periodically scan the child's screen buffer for the TUI status
+        bar's `context X%` indicator and POST changes to the hub.
+
+        Keeps the roster's "Ctx" column live without flooding the hub:
+        polls every 3 s, only POSTs when the parsed value differs from
+        the last one we sent. Exits when stop_event is set.
+        """
+        while not self._stop_event.wait(3.0):
+            child = self._child
+            if child is None or child._master_fd is None:
+                continue
+            with child._screen_lock:
+                tail = bytes(child._screen_buf)
+            pct = _parse_context_pct(tail)
+            if pct == self._last_context_pct:
+                continue
+            try:
+                resp = httpx.post(
+                    self._context_pct_url(),
+                    json={"pct": pct},
+                    headers=self._headers,
+                    timeout=2.0,
+                )
+                if resp.status_code < 400:
+                    self._last_context_pct = pct
+                else:
+                    logger.debug(
+                        "context-pct POST %d: %s",
+                        resp.status_code, resp.text[:120],
+                    )
+            except Exception as e:
+                logger.debug("context-pct POST failed: %s", e)
 
     def stop(self, clean: bool = False) -> None:
         """Stop the listener. Set clean=True when the session is ending
@@ -710,6 +875,34 @@ class _ManagerChannelListener:
             logger.warning("failed to post health response")
 
     def _handle_event(self, event_type: str, data: dict) -> None:
+        # pty_* events are a separate event-kind family — dispatch them
+        # before the channel_event kind-matching because they don't have
+        # the meta.kind / content shape.
+        if event_type == "pty_attach":
+            self._start_pty_stream()
+            return
+        if event_type == "pty_detach":
+            self._stop_pty_stream()
+            return
+        if event_type == "pty_data":
+            hex_str = data.get("bytes_hex", "")
+            if hex_str and self._child is not None:
+                try:
+                    self._child.send_bytes(bytes.fromhex(hex_str))
+                except ValueError:
+                    logger.warning("pty_data: bad hex payload")
+            return
+        if event_type == "pty_resize":
+            cols = int(data.get("cols", 80))
+            rows = int(data.get("rows", 24))
+            if self._child is not None and self._child._master_fd is not None:
+                try:
+                    winsize = struct.pack("HHHH", rows, cols, 0, 0)
+                    fcntl.ioctl(self._child._master_fd, termios.TIOCSWINSZ, winsize)
+                except OSError as e:
+                    logger.warning("pty_resize: %s", e)
+            return
+
         meta = data.get("meta", {})
         kind = meta.get("kind", "") or data.get("content", "")
         child = self._child
@@ -732,9 +925,9 @@ class _ManagerChannelListener:
             if child:
                 child.send_command("/exit")
 
-        elif kind == "update_wrapper":
-            logger.info("manager: update_wrapper — exiting with %d to trigger re-exec", EXIT_UPDATE_WRAPPER)
-            self._update_wrapper_requested = True
+        elif kind == "update_manager":
+            logger.info("manager: update_manager — exiting with %d to trigger re-exec", EXIT_UPDATE_MANAGER)
+            self._update_manager_requested = True
             self._stop_requested = True
             if child:
                 child.send_command("/exit")
@@ -797,6 +990,195 @@ class _ManagerChannelListener:
                     args=(child, server),
                     daemon=True,
                 ).start()
+
+    def _worker_name_for_pty(self) -> str:
+        """The worker name the browser connects to for this session. The
+        manager registered as `<session_name>-manager`; pty-out POSTs go
+        to the plain session name (that's what the browser WS targets).
+        """
+        return self._session_name
+
+    def _pty_out_url(self) -> str:
+        return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/pty-out"
+
+    def _pty_control_url(self) -> str:
+        return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/pty-control"
+
+    def _context_pct_url(self) -> str:
+        return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/context-pct"
+
+    def _post_pty_size(self) -> None:
+        """Tell attached browser clients the current pty cols/rows so
+        their xterm renders at the same size claude is rendering for.
+        Without this, the browser uses its FitAddon-derived size and
+        the user sees output at one size while the real terminal sees
+        it at another."""
+        if self._child is None:
+            return
+        size = self._child.pty_size()
+        if size is None:
+            return
+        cols, rows = size
+        try:
+            httpx.post(
+                self._pty_control_url(),
+                json={"kind": "size", "cols": cols, "rows": rows},
+                headers={**self._headers, "Content-Type": "application/json"},
+                timeout=2.0,
+            )
+        except Exception as e:
+            logger.debug("post_pty_size failed: %s", e)
+
+    def _start_pty_stream(self) -> None:
+        """Handle a `pty_attach` event from the hub.
+
+        Two responsibilities, separately idempotent:
+
+        1. **Re-pump size + redraw on every attach.** The first attach
+           starts the stream loop which dumps the screen buffer and
+           triggers a TUI repaint. Subsequent attaches (pop-out windows,
+           extra tabs) join an already-running stream loop, but they
+           still need a fresh size echo and a SIGWINCH-driven repaint
+           so their xterm renders against current pty state instead of
+           an empty alt-screen. We always run those here — not inside
+           the loop.
+
+        2. **Start the stream loop once.** The loop attaches its own
+           queue tap to the pty reader and POSTs bytes to the hub
+           forever. Idempotent: a second call while the thread is alive
+           is a no-op for the loop itself.
+
+        Race with manager-restart: pty_attach can arrive in the window
+        between Python re-exec and claude startup, when `_child` is
+        still None. We mark it pending so `set_child()` can start the
+        stream as soon as the new claude child is wired up.
+        """
+        # Always: tell new (and existing) clients the current size and
+        # trigger a TUI repaint. Cheap. Both helpers no-op safely when
+        # no clients are attached on the hub side.
+        self._post_pty_size()
+        if self._child is not None:
+            try:
+                self._child.trigger_redraw()
+            except Exception as e:
+                logger.debug("trigger_redraw on attach failed: %s", e)
+
+        if self._pty_stream_thread and self._pty_stream_thread.is_alive():
+            logger.debug("pty stream already running — refreshed new client")
+            return
+        if self._child is None or self._child._master_fd is None:
+            logger.info(
+                "pty_attach: no pty child yet — deferring stream start "
+                "until set_child() runs",
+            )
+            self._pty_attach_pending = True
+            return
+        logger.info("pty_attach: starting pty stream for %s", self._worker_name_for_pty())
+        self._pty_stream_stop = threading.Event()
+        self._pty_stream_thread = threading.Thread(
+            target=self._pty_stream_loop,
+            args=(self._pty_stream_stop,),
+            daemon=True,
+        )
+        self._pty_stream_thread.start()
+
+    def _stop_pty_stream(self) -> None:
+        """Signal the stream thread to exit. Idempotent. Also clears
+        any pending-attach intent — pty_detach means the operator is
+        no longer asking for a stream, so we shouldn't auto-start one
+        when set_child fires next."""
+        self._pty_attach_pending = False
+        if self._pty_stream_stop is not None:
+            logger.info("pty_detach: stopping pty stream")
+            self._pty_stream_stop.set()
+        # Thread exits on its own; we don't join here to avoid blocking
+        # the SSE loop on a socket timeout.
+        self._pty_stream_thread = None
+        self._pty_stream_stop = None
+
+    def _pty_stream_loop(self, stop: threading.Event) -> None:
+        """Copy pty master output to the hub in real time. Runs in a
+        background thread.
+
+        Pumping is queue-based, not buffer-polling: pump_io appends
+        every chunk read from the master FD into a bounded queue
+        (`child._stream_queue`); this loop drains that queue and
+        POSTs to the hub. Bursty redraws (Claude's TUI repaints) no
+        longer get lost when the screen buffer wraps.
+
+        On attach, the existing screen contents are sent first so
+        the browser xterm renders what the operator sees in the real
+        terminal — no blank screen waiting on the next keystroke.
+
+        This is additive: tm_screenshot / tm_keystroke keep working
+        alongside (they read/write the same pty master).
+        """
+        child = self._child
+        if child is None or child._master_fd is None:
+            return
+        url = self._pty_out_url()
+
+        # Atomic snapshot+attach: bytes that were in screen_buf at
+        # this moment go in `initial`; bytes that arrive after go in
+        # `q`. No duplication. Size echo + redraw already happened in
+        # `_start_pty_stream` (and they fire on every attach, not just
+        # this first one).
+        initial, q = child.attach_stream()
+
+        if initial:
+            try:
+                resp = httpx.post(
+                    url, content=initial,
+                    headers={**self._headers, "Content-Type": "application/octet-stream"},
+                    timeout=2.0,
+                )
+                if resp.status_code == 404:
+                    logger.debug("pty_out: hub says no clients on initial dump; stopping")
+                    child.detach_stream()
+                    return
+            except Exception as e:
+                logger.debug("pty_out initial dump failed: %s", e)
+        # Drain the queue forever. Block on get() so we react instantly
+        # to new bytes — no 16ms polling lag, no missed data when the
+        # screen buffer wraps under a TUI redraw.
+        Empty = queue.Empty
+        while not stop.is_set():
+            try:
+                data = q.get(timeout=0.5)
+            except Empty:
+                continue
+            if not data:
+                # Empty bytes are a "soft close" sentinel. Loop and
+                # check stop.is_set() to exit cleanly.
+                continue
+            # Coalesce any further pending chunks so each POST carries
+            # as much as possible — fewer round trips, same latency.
+            chunks = [data]
+            while True:
+                try:
+                    chunks.append(q.get_nowait())
+                except Empty:
+                    break
+            payload = b"".join(chunks)
+            try:
+                resp = httpx.post(
+                    url, content=payload,
+                    headers={**self._headers, "Content-Type": "application/octet-stream"},
+                    timeout=2.0,
+                )
+                if resp.status_code == 404:
+                    logger.debug("pty_out: hub says no clients; stopping stream")
+                    break
+                if resp.status_code >= 400:
+                    logger.warning(
+                        "pty_out POST %d: %s", resp.status_code, resp.text[:100],
+                    )
+            except Exception as e:
+                logger.debug("pty_out POST failed: %s", e)
+                stop.wait(0.5)
+
+        child.detach_stream()
+        logger.info("pty_stream: exited")
 
     def _run_reconnect_mcp(self, child: "_PtyChild", server: str) -> None:
         """Drive reconnect_mcp on a background thread, post result to the hub."""
@@ -875,22 +1257,22 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
     else:
         logger.warning("TUBEMAIL_SECRET not set — manager channel disabled")
 
-    # Resolve the forwarder plugin dir (contains .claude-plugin/ and commands/)
+    # Resolve the channel plugin dir (contains .claude-plugin/ and commands/)
     # so Claude Code loads the /restart skill and other plugin commands.
-    _forwarder_dir = str(Path(__file__).resolve().parents[2])
+    _channel_dir = str(Path(__file__).resolve().parents[2])
 
     base_cmd = [
         "claude",
         "--name", session_name,
         "--rc", session_name,
         "--dangerously-load-development-channels", "server:tubemail-channel",
-        "--plugin-dir", _forwarder_dir,
+        "--plugin-dir", _channel_dir,
     ]
     if extra_args:
         base_cmd.extend(extra_args)
 
     # Set worker name in our own environment so it's inherited by the pty child,
-    # which inherits it to claude, which inherits it to the forwarder.
+    # which inherits it to claude, which inherits it to the channel.
     os.environ["TM_WORKER_NAME"] = session_name
 
     # Signal handlers — fallback control path when tubemail is down.
@@ -971,19 +1353,19 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
         if listener:
             # "Clean" = the reason we fell out of the loop was "claude
             # exited code 0 without any restart/update/force-stop signal"
-            # — i.e. user typed /exit. Everything else (update_wrapper,
+            # — i.e. user typed /exit. Everything else (update_manager,
             # force_stop, crash recovery gone wrong) is not clean.
             clean = (
-                not listener.update_wrapper_requested
+                not listener.update_manager_requested
                 and not _signal_restart
                 and not _signal_stop
             )
             listener.stop(clean=clean)
 
-    # If the stop signal came from update_wrapper, return the sentinel so the
+    # If the stop signal came from update_manager, return the sentinel so the
     # bash wrapper knows to re-exec python instead of exiting.
-    if listener and listener.update_wrapper_requested:
-        return EXIT_UPDATE_WRAPPER
+    if listener and listener.update_manager_requested:
+        return EXIT_UPDATE_MANAGER
     return 0
 
 

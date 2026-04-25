@@ -5,11 +5,11 @@ from __future__ import annotations
 from tubemail.manager import (
     _extract_mcp_server_list,
     _server_dialog_position,
-    EXIT_UPDATE_WRAPPER,
+    EXIT_UPDATE_MANAGER,
 )
 
 
-# Realistic sample captured from the leanspecs-spec-qm session on 2026-04-22.
+# Realistic sample captured from the leanspecs-spec-tm session on 2026-04-22.
 # Mixed sections, a failed server, and headers that must NOT be picked up.
 SAMPLE_MCP_DIALOG = """Manage MCP servers
 11 servers
@@ -98,7 +98,7 @@ class TestServerDialogPosition:
 
 
 class TestExitCodes:
-    def test_update_wrapper_exit_code_is_42(self):
+    def test_update_manager_exit_code_is_42(self):
         # The bash wrapper in scripts/claude-tm case-matches this exact value;
         # changing it requires a coordinated bash update.
-        assert EXIT_UPDATE_WRAPPER == 42
+        assert EXIT_UPDATE_MANAGER == 42
