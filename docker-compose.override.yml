@@ -1,0 +1,20 @@
+# Dev mode overlay. Applied automatically by `docker compose up` (no
+# flags needed). Run `docker compose -f docker-compose.yml up` to skip
+# this file and run the published image as production.
+#
+# - MCP_RELOAD=1 makes entrypoint.sh add `uvicorn --reload --reload-dir
+#   /app/src/tubemail_hub` so saving a Python file restarts the server
+#   in place.
+# - Source bind-mounts let the in-container path point at the host's
+#   working tree. Without these, --reload would watch the baked image's
+#   copy of the source and never see your edits.
+# - frontend/dist is also bind-mounted so `npm run build` (or `vite
+#   --watch`) on the host updates the UI without an image rebuild.
+services:
+  tubemail-hub:
+    environment:
+      - MCP_RELOAD=1
+    volumes:
+      - ./src:/app/src:ro
+      - ./VERSION:/app/VERSION:ro
+      - ./frontend/dist:/app/frontend/dist:ro
