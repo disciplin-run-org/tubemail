@@ -58,6 +58,38 @@ _RATE_LIMIT_BACKOFF_S = (15, 30, 60, 120)
 # so the next rate-limit again starts at 15s (not wherever we left off).
 _RATE_LIMIT_RESET_AFTER_S = 20
 
+# Hub-frame delivery backoff. When pty_out / context-pct POSTs fail in a
+# row, the manager sleeps for these intervals before the next try. Saturates
+# at the last value. The pump_io thread is unaffected — it keeps draining
+# the master pty regardless. These bounds only control how often background
+# threads hit a degraded hub.
+_FRAMES_BACKOFF_S = (0.5, 1.0, 2.0, 5.0, 10.0, 30.0)
+
+# After this many seconds of unbroken POST failures, give up the pty stream
+# entirely. The hub's next pty_attach will start a fresh stream when the
+# operator re-attaches. Without this cap a perpetually-broken hub burns
+# CPU forever in the backoff loop.
+_FRAMES_GIVE_UP_AFTER_S = 120.0
+
+
+def _frames_backoff_s(consecutive_failures: int) -> float:
+    """Pick the backoff for the Nth consecutive frame-delivery failure."""
+    idx = min(max(consecutive_failures - 1, 0), len(_FRAMES_BACKOFF_S) - 1)
+    return _FRAMES_BACKOFF_S[idx]
+
+
+def _drain_queue(q: "queue.Queue[bytes]") -> int:
+    """Empty `q` of all currently-buffered bytes. Returns the number of
+    items dropped. Used while a frame-delivery loop is backing off so the
+    queue cannot grow unbounded during a hub outage."""
+    dropped = 0
+    while True:
+        try:
+            q.get_nowait()
+            dropped += 1
+        except queue.Empty:
+            return dropped
+
 
 def _normalize_pty_tail(tail: bytes) -> bytes:
     """Strip ANSI escapes and whitespace from a pty buffer slice so text
@@ -74,6 +106,46 @@ def _normalize_pty_tail(tail: bytes) -> bytes:
 # normalized form (no spaces) so it survives whatever ANSI/wrapping the
 # screen rendered.
 _CONTEXT_PCT_RE = re.compile(rb"context(\d{1,3})%")
+
+# Markers that appear in claude's TUI ONLY while a request is in flight.
+# When claude is at a quiet prompt waiting for input, none of these are
+# on screen.
+#
+# - `(Xs·` is the running timer parenthetical that wraps the spinner
+#   text ("Mulling… (8s · ↑512 tokens)"). Definitively in-flight.
+# - The verb-ing nouns are the spinner labels claude cycles through
+#   while generating tokens / running tools. They're absent from the
+#   idle prompt.
+#
+# Whitespace/newlines are stripped by `_normalize_pty_tail` before the
+# search, so multi-line word wrap doesn't defeat the patterns.
+_ACTIVE_RE = re.compile(
+    rb"\(\d+s"                # "(8s" — running timer parenthetical
+    rb"|Mulling"
+    rb"|Unfurling"
+    rb"|thinking"
+    rb"|stillthinking"
+    rb"|thoughtfor"
+    rb"|Brewedfor"            # past-tense; lingers briefly post-completion
+    rb"|Callingtubemail"      # tool call ("Calling tubemail (ctrl+o…)")
+    rb"|Running"              # bash tool spinner sub-text ("Running…")
+)
+
+
+def _is_actively_processing(tail: bytes) -> bool:
+    """Return True if claude's TUI is mid-request right now.
+
+    Used by the manager to push an authoritative busy/idle signal up
+    to the hub so the roster doesn't have to guess from event-timeline
+    decay heuristics. The manager has direct line of sight to the pty;
+    the hub does not.
+
+    The detector is a substring match on the normalized last-screen
+    tail. False positives would happen only if claude's chat content
+    itself contained one of the spinner labels — very unlikely outside
+    a doc page about claude's own UI.
+    """
+    return _ACTIVE_RE.search(_normalize_pty_tail(tail)) is not None
 
 
 def _parse_context_pct(tail: bytes) -> int | None:
@@ -701,6 +773,10 @@ class _ManagerChannelListener:
         # repeated POSTs when the parsed value hasn't changed. None
         # means "never posted yet" — the next non-None parse will fire.
         self._last_context_pct: int | None = None
+        # Last "is claude actively processing" state we POSTed. Same
+        # change-only push contract as context-pct. None means we
+        # haven't reported yet; the first scan will always fire.
+        self._last_active_state: bool | None = None
         self._context_pct_thread: threading.Thread | None = None
 
     @property
@@ -740,38 +816,99 @@ class _ManagerChannelListener:
         self._context_pct_thread.start()
 
     def _context_pct_loop(self) -> None:
-        """Periodically scan the child's screen buffer for the TUI status
-        bar's `context X%` indicator and POST changes to the hub.
+        """Periodically scan the child's screen buffer and push two
+        derived signals to the hub when they change:
 
-        Keeps the roster's "Ctx" column live without flooding the hub:
-        polls every 3 s, only POSTs when the parsed value differs from
-        the last one we sent. Exits when stop_event is set.
+        - `context X%` — the TUI status bar's context-window indicator,
+          rendered as the "Ctx" column in the roster.
+        - `is_active` — whether claude is mid-request (spinner labels
+          like "Mulling…" + the "(8s · ↑512 tokens)" running timer
+          are present in the recent screen). The hub uses this as the
+          authoritative busy/idle signal in `WorkerState.status_state()`.
+
+        Same loop, same scan, same change-only push contract — both
+        signals POST only when their value differs from the last one
+        we sent, so an idle worker is silent on the wire. Exits when
+        stop_event is set.
+
+        Failure handling: when the hub is slow or down, consecutive POST
+        failures back off exponentially via _frames_backoff_s instead of
+        firing every 3s into a wall. The 3s base interval resumes once a
+        POST succeeds.
         """
-        while not self._stop_event.wait(3.0):
+        consecutive_failures = 0
+        while True:
+            wait_s = (
+                3.0 if consecutive_failures == 0
+                else _frames_backoff_s(consecutive_failures)
+            )
+            if self._stop_event.wait(wait_s):
+                return
             child = self._child
             if child is None or child._master_fd is None:
                 continue
             with child._screen_lock:
                 tail = bytes(child._screen_buf)
+            # Derive both signals from the same snapshot.
             pct = _parse_context_pct(tail)
-            if pct == self._last_context_pct:
-                continue
-            try:
-                resp = httpx.post(
-                    self._context_pct_url(),
-                    json={"pct": pct},
-                    headers=self._headers,
-                    timeout=2.0,
+            active = _is_actively_processing(tail)
+
+            failed_this_tick = False
+
+            if pct != self._last_context_pct:
+                ok = self._post_signal(
+                    self._context_pct_url(), {"pct": pct},
+                    label="context-pct",
                 )
-                if resp.status_code < 400:
+                if ok:
                     self._last_context_pct = pct
                 else:
-                    logger.debug(
-                        "context-pct POST %d: %s",
-                        resp.status_code, resp.text[:120],
-                    )
-            except Exception as e:
-                logger.debug("context-pct POST failed: %s", e)
+                    failed_this_tick = True
+
+            if active != self._last_active_state:
+                ok = self._post_signal(
+                    self._active_state_url(), {"is_active": active},
+                    label="active-state",
+                )
+                if ok:
+                    self._last_active_state = active
+                else:
+                    failed_this_tick = True
+
+            if failed_this_tick:
+                consecutive_failures += 1
+            elif consecutive_failures > 0:
+                logger.info(
+                    "status loop: recovered after %d failures",
+                    consecutive_failures,
+                )
+                consecutive_failures = 0
+
+    def _post_signal(
+        self, url: str, payload: dict[str, Any], *, label: str,
+    ) -> bool:
+        """POST a small status-signal JSON payload. Returns True on a
+        2xx-ish response, False on transport error or 4xx/5xx. Used by
+        `_context_pct_loop` for the context-pct and is-active signals
+        so a 404 from one doesn't block the other."""
+        try:
+            resp = httpx.post(
+                url, json=payload, headers=self._headers, timeout=2.0,
+            )
+            if resp.status_code < 400:
+                return True
+            # 404 here means the active-state endpoint isn't deployed
+            # yet — quiet that case so logs aren't spammed during a
+            # rolling deploy.
+            log = logger.debug if resp.status_code == 404 else logger.warning
+            log(
+                "%s POST %d: %s",
+                label, resp.status_code, resp.text[:120],
+            )
+            return False
+        except Exception as e:
+            logger.debug("%s POST failed: %s", label, e)
+            return False
 
     def stop(self, clean: bool = False) -> None:
         """Stop the listener. Set clean=True when the session is ending
@@ -1007,6 +1144,9 @@ class _ManagerChannelListener:
     def _context_pct_url(self) -> str:
         return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/context-pct"
 
+    def _active_state_url(self) -> str:
+        return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/active"
+
     def _post_pty_size(self) -> None:
         """Tell attached browser clients the current pty cols/rows so
         their xterm renders at the same size claude is rendering for.
@@ -1054,9 +1194,18 @@ class _ManagerChannelListener:
         stream as soon as the new claude child is wired up.
         """
         # Always: tell new (and existing) clients the current size and
-        # trigger a TUI repaint. Cheap. Both helpers no-op safely when
-        # no clients are attached on the hub side.
-        self._post_pty_size()
+        # trigger a TUI repaint. Both helpers no-op safely when no
+        # clients are attached on the hub side.
+        #
+        # _post_pty_size hits the hub over HTTP and can take up to
+        # timeout=2.0s when the hub is degraded. We're called from the
+        # SSE event-handler thread, so a slow POST here would queue up
+        # ALL subsequent SSE events (force_restart, clear, keystroke,
+        # etc.) for that long. Fire it on a daemon thread so the SSE
+        # loop stays responsive.
+        threading.Thread(
+            target=self._post_pty_size, daemon=True,
+        ).start()
         if self._child is not None:
             try:
                 self._child.trigger_redraw()
@@ -1112,6 +1261,14 @@ class _ManagerChannelListener:
 
         This is additive: tm_screenshot / tm_keystroke keep working
         alongside (they read/write the same pty master).
+
+        Failure handling: this loop never blocks pump_io, but a slow
+        or down hub can still pile up failed POSTs. We track
+        consecutive failures and back off exponentially (0.5s → 30s).
+        After ~_FRAMES_GIVE_UP_AFTER_S of nothing-but-failures we stop
+        the stream entirely — the hub's next pty_attach event will
+        start a fresh one. While backing off we keep draining the
+        queue so memory doesn't grow.
         """
         child = self._child
         if child is None or child._master_fd is None:
@@ -1142,7 +1299,24 @@ class _ManagerChannelListener:
         # to new bytes — no 16ms polling lag, no missed data when the
         # screen buffer wraps under a TUI redraw.
         Empty = queue.Empty
+        consecutive_failures = 0
+        first_failure_at = 0.0
         while not stop.is_set():
+            # Circuit-breaker check fires every iteration, even when the
+            # queue is idle. Without this, an empty queue during an
+            # outage would leave the loop spinning on q.get() until the
+            # next byte arrives — meanwhile we'd never re-evaluate
+            # whether the hub has been dead long enough to give up.
+            if (
+                consecutive_failures > 0
+                and (time.monotonic() - first_failure_at) > _FRAMES_GIVE_UP_AFTER_S
+            ):
+                logger.warning(
+                    "pty_out: hub unresponsive for >%ds (%d failures);"
+                    " dropping stream until next pty_attach",
+                    _FRAMES_GIVE_UP_AFTER_S, consecutive_failures,
+                )
+                break
             try:
                 data = q.get(timeout=0.5)
             except Empty:
@@ -1173,9 +1347,34 @@ class _ManagerChannelListener:
                     logger.warning(
                         "pty_out POST %d: %s", resp.status_code, resp.text[:100],
                     )
+                    raise RuntimeError(f"pty_out HTTP {resp.status_code}")
+                # Successful delivery — clear failure state.
+                if consecutive_failures > 0:
+                    logger.info(
+                        "pty_out: recovered after %d failures",
+                        consecutive_failures,
+                    )
+                consecutive_failures = 0
+                first_failure_at = 0.0
             except Exception as e:
-                logger.debug("pty_out POST failed: %s", e)
-                stop.wait(0.5)
+                consecutive_failures += 1
+                if first_failure_at == 0.0:
+                    first_failure_at = time.monotonic()
+                # Top-of-loop check fires on the NEXT iteration if we've
+                # passed the give-up window — so we don't need to repeat
+                # it here. Still set first_failure_at so it's accurate.
+                backoff = _frames_backoff_s(consecutive_failures)
+                logger.debug(
+                    "pty_out POST failed (#%d): %s — backing off %.1fs",
+                    consecutive_failures, e, backoff,
+                )
+                # Drain queued chunks while we wait so the queue can't
+                # grow unbounded during an outage. pump_io already
+                # drops oldest on overflow, but draining here turns
+                # "lossy ring buffer" into "best-effort delivery."
+                _drain_queue(q)
+                if stop.wait(backoff):
+                    break
 
         child.detach_stream()
         logger.info("pty_stream: exited")
