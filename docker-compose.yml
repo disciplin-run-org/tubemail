@@ -7,6 +7,7 @@ services:
       - PYTHONUNBUFFERED=1
       - MCP_PORT=8004
       - TUBEMAIL_SECRET=${TUBEMAIL_SECRET:?TUBEMAIL_SECRET is required}
+      - TUBEMAIL_ALLOWED_ORIGINS=${TUBEMAIL_ALLOWED_ORIGINS:-}
     volumes:
       - tubemail-data:/data
     healthcheck:
