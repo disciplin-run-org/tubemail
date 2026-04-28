@@ -14,12 +14,32 @@ from pydantic import BaseModel, Field
 # Without decay, any worker whose author forgot to call the reply tool
 # stays "busy" forever in the roster.
 #
-# 10 minutes is empirically long enough to cover normal work bursts but
-# short enough that an idle worker doesn't sit in the wrong state across
-# a coffee break. Workers that DO emit progress outbound events (heartbeat,
-# partial reply, permission request) reset the trailing-inbound clock so
-# they remain "busy" through the active window.
+# 10 minutes is the absolute cap, used when we have no other signal that
+# the worker has been alive since the inbound arrived. Workers running
+# the post-2026-04 manager push context-pct heartbeats whenever Claude
+# burns tokens — those bump last_activity above the inbound timestamp
+# and let us decay much faster (BUSY_QUIET_S) once the heartbeats stop.
 BUSY_DECAY_S = 600.0
+
+# Once we've seen ANY post-inbound activity (context-pct push, register,
+# recording POST, etc.), how long to wait without further activity before
+# treating the worker as idle. 60 seconds is short enough that a worker
+# that finished a work order silently flips to idle within a normal
+# attention span, long enough to cover a tool call or short pause in
+# token generation. Bug fixed 2026-04-26 — quartermaster-tm sat at
+# `busy` after each silently-completed work order even though the
+# manager was reporting "no more context-pct changes" continuously.
+BUSY_QUIET_S = 60.0
+
+# How long an `observed_active` push from the manager remains
+# authoritative. The manager re-checks every 3s and re-POSTs only on
+# change, so under normal operation observations stay valid forever
+# (no churn). This freshness window is the disconnect-detection knob:
+# if the manager dies / the network blips / the channel plugin loses
+# its loop, the observation goes stale and `status_state()` falls
+# back to event-timeline decay. 30s = ~10 missed status loops, which
+# is "the manager is genuinely gone" not "it's slow."
+OBSERVED_ACTIVE_FRESHNESS_S = 30.0
 
 
 class RegisterRequest(BaseModel):
@@ -98,22 +118,65 @@ class WorkerState(BaseModel):
     # None until the first parse — workers running older managers stay
     # at None forever, which the UI renders as "—".
     context_pct: int | None = None
+    # Authoritative busy/idle signal from the manager. The manager parses
+    # claude's TUI for spinner / running-timer markers and pushes the
+    # boolean on every change to POST /tubemail/<worker>/active. None
+    # means "manager has never reported" (legacy manager, or worker just
+    # registered) — `status_state()` falls back to event-timeline decay
+    # in that case. Field added 2026-04-26 alongside BUSY_QUIET_S.
+    observed_active: bool | None = None
+    observed_active_at: float = 0.0
 
     def status_state(self) -> str:
         if self.pending_permissions:
             return "waiting_permission"
+        now = time.time()
+
+        # Authoritative signal: the manager parses claude's TUI screen
+        # and pushes a boolean here whenever it changes. When fresh,
+        # this beats every event-timeline heuristic — the manager has
+        # direct line of sight to the pty, the hub does not.
+        #
+        # Only honored if we've seen a recent push. If the manager has
+        # been silent longer than OBSERVED_ACTIVE_FRESHNESS_S (likely
+        # crashed / disconnected / running a build of the manager that
+        # predates this signal), fall through to the timeline-based
+        # decay so the roster still gives the user a useful state.
+        if (
+            self.observed_active is not None
+            and now - self.observed_active_at < OBSERVED_ACTIVE_FRESHNESS_S
+        ):
+            return "busy" if self.observed_active else "idle"
+
+        # Fallback: event-timeline decay. Used by legacy managers and
+        # during manager-disconnect windows.
+        #
         # Busy = orchestrator handed work to the worker and no reply has come
         # back yet. The only reliable signal the hub has is the timeline:
         # a trailing `inbound` means work is in flight; a trailing `outbound`
         # (or any non-inbound) means the worker has reported done.
         #
-        # If the trailing inbound is older than BUSY_DECAY_S, treat as idle.
-        # Many work orders complete with a code edit or commit rather than a
-        # channel outbound, so without this decay the worker stays "busy"
-        # forever — e.g. jjstack-tm sat in busy for 2+ days after handling
-        # two work orders silently (2026-04-25 investigation).
+        # The decay logic uses two windows:
+        #
+        # 1. BUSY_DECAY_S (10 min) — absolute cap on a stale inbound, used
+        #    even when the worker has produced zero post-inbound signal.
+        #    Catches workers running the legacy manager (no context-pct).
+        # 2. BUSY_QUIET_S (60 s) — applied only when the worker HAS shown
+        #    post-inbound activity (last_activity has advanced past the
+        #    inbound's ts). The post-2026-04 manager pushes context-pct
+        #    every time Claude burns tokens, so a worker actively
+        #    generating bumps last_activity continuously. When those
+        #    heartbeats stop for BUSY_QUIET_S, the worker has finished
+        #    silently and should flip to idle even if the inbound itself
+        #    is still inside the 10-min window.
         if self.events and self.events[-1].kind == "inbound":
-            if time.time() - self.events[-1].ts > BUSY_DECAY_S:
+            inbound_ts = self.events[-1].ts
+            if now - inbound_ts > BUSY_DECAY_S:
+                return "idle"
+            if (
+                self.last_activity > inbound_ts
+                and now - self.last_activity > BUSY_QUIET_S
+            ):
                 return "idle"
             return "busy"
         return "idle"

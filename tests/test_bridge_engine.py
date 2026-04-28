@@ -317,6 +317,97 @@ async def test_wait_for_activity_timeout(engine: BridgeEngine):
     assert new == []
 
 
+async def test_wait_for_matching_event_skips_unrelated(engine: BridgeEngine):
+    """Regression test: an unrelated event must not satisfy a request that's
+    waiting for a specific outbound reply.
+
+    Historical bug: tm_reconnect_mcp called wait_for_activity(since=None)
+    which returned existing events instantly; if a parallel orchestrator
+    fired tm_screenshot during the reconnect, the screenshot's events
+    would wake the wait, the tool would scan and find no matching
+    reconnect_mcp_result, and return a false 30s timeout — even though
+    the manager later posted a successful result.
+    """
+    await engine.register_worker("w", "/")
+
+    # Pre-existing stale events (e.g. an old health_response from
+    # yesterday). With the old wait_for_activity(since=None) these
+    # would short-circuit the wait.
+    await engine.record_outbound("w", "stale", {"kind": "health_response"})
+    inbound = await engine.enqueue_inbound("w", "do thing", {"kind": "do_thing"})
+
+    async def post_intervening_then_real_reply() -> None:
+        # Unrelated noise that wakes wait_for_activity but doesn't match.
+        await asyncio.sleep(0.05)
+        await engine.record_outbound("w", "screenshot data", {"kind": "screenshot"})
+        # Then the actual reply we're waiting for.
+        await asyncio.sleep(0.05)
+        await engine.record_outbound(
+            "w", '{"ok": true}', {"kind": "reconnect_mcp_result", "ok": True},
+        )
+
+    asyncio.create_task(post_intervening_then_real_reply())
+
+    result = await engine.wait_for_matching_event(
+        "w",
+        since=inbound.event_id,
+        match=lambda e: (
+            e.kind == "outbound" and e.meta.get("kind") == "reconnect_mcp_result"
+        ),
+        timeout_s=2.0,
+    )
+    assert result is not None, "must have found the reconnect_mcp_result"
+    assert result.meta.get("kind") == "reconnect_mcp_result"
+
+
+async def test_wait_for_matching_event_returns_none_on_timeout(
+    engine: BridgeEngine,
+):
+    """If the matching event never arrives, return None — even if other
+    activity (intervening events) keeps the worker busy."""
+    await engine.register_worker("w", "/")
+    inbound = await engine.enqueue_inbound("w", "do thing", {"kind": "do_thing"})
+
+    async def keep_posting_unrelated() -> None:
+        for _ in range(10):
+            await asyncio.sleep(0.05)
+            await engine.record_outbound("w", "noise", {"kind": "screenshot"})
+
+    asyncio.create_task(keep_posting_unrelated())
+
+    result = await engine.wait_for_matching_event(
+        "w",
+        since=inbound.event_id,
+        match=lambda e: e.meta.get("kind") == "reconnect_mcp_result",
+        timeout_s=0.6,
+    )
+    assert result is None
+
+
+async def test_wait_for_matching_event_does_not_return_pre_since_match(
+    engine: BridgeEngine,
+):
+    """Regression: a matching event from BEFORE the `since` cursor must
+    not be returned. This is what made tm_health return stale data."""
+    await engine.register_worker("w", "/")
+    # Old reply already in the timeline (the "stale data" trap).
+    await engine.record_outbound(
+        "w", '{"old": true}', {"kind": "health_response"},
+    )
+    inbound = await engine.enqueue_inbound("w", "health_check", {"kind": "health_check"})
+
+    result = await engine.wait_for_matching_event(
+        "w",
+        since=inbound.event_id,
+        match=lambda e: (
+            e.kind == "outbound" and e.meta.get("kind") == "health_response"
+        ),
+        timeout_s=0.3,
+    )
+    # The stale outbound predates `since` — must not be returned.
+    assert result is None
+
+
 async def test_goodbye_marks_worker_exited_cleanly(engine: BridgeEngine):
     await engine.register_worker("w", "/")
     # Fresh worker: not exited yet.
@@ -435,6 +526,144 @@ async def test_status_state_decays_old_inbound_to_idle(engine: BridgeEngine):
     # Pretend it happened way before the decay threshold.
     event.ts = _time.time() - (BUSY_DECAY_S + 60)
     assert ws.status_state() == "idle"
+
+
+async def test_status_state_decays_quiet_worker_with_post_inbound_activity(
+    engine: BridgeEngine,
+):
+    """When a worker showed post-inbound activity (e.g. context-pct
+    heartbeats while Claude generated tokens) but those heartbeats then
+    went quiet for longer than BUSY_QUIET_S, treat as idle even though
+    the inbound itself is still inside the 10-minute hard cap.
+
+    Caught 2026-04-26: quartermaster-tm sat at `busy` for the full 10
+    minutes after each silently-completed work order even though
+    context-pct stopped firing within seconds of the actual completion.
+    """
+    import time as _time
+    from tubemail_hub.bridge.models import BUSY_QUIET_S
+    await engine.register_worker("w", "/")
+    event = await engine.enqueue_inbound("w", "do the thing")
+    ws = engine.get_worker("w")
+    assert ws is not None
+
+    # Worker pushed a context-pct heartbeat 5 s after the inbound (still
+    # actively generating tokens at that point).
+    ws.last_activity = event.ts + 5.0
+
+    # No heartbeats since. Pretend `now` is BUSY_QUIET_S + 10s past the
+    # last heartbeat (still well under BUSY_DECAY_S since the inbound).
+    # Drive the clock by shifting both the event and last_activity into
+    # the past instead of patching time.time().
+    quiet_for = BUSY_QUIET_S + 10.0
+    event.ts = _time.time() - (5.0 + quiet_for)
+    ws.last_activity = _time.time() - quiet_for
+
+    assert ws.status_state() == "idle", (
+        "post-inbound heartbeats stopped >BUSY_QUIET_S ago — must decay early"
+    )
+
+
+async def test_status_state_busy_while_post_inbound_activity_is_fresh(
+    engine: BridgeEngine,
+):
+    """Inverse of the quiet-decay test: while heartbeats are still fresh
+    (within BUSY_QUIET_S), keep reporting busy. Otherwise an actively-
+    generating worker would flap to idle every time the algorithm runs."""
+    import time as _time
+    await engine.register_worker("w", "/")
+    event = await engine.enqueue_inbound("w", "do the thing")
+    ws = engine.get_worker("w")
+    assert ws is not None
+
+    # Inbound 30 s ago, heartbeat 5 s ago — well under BUSY_QUIET_S.
+    event.ts = _time.time() - 30.0
+    ws.last_activity = _time.time() - 5.0
+    assert ws.status_state() == "busy"
+
+
+async def test_status_state_observed_active_overrides_timeline_decay(
+    engine: BridgeEngine,
+):
+    """When the manager has pushed a fresh active-state observation,
+    `status_state` honors it regardless of what the event timeline
+    says. This is the manager-as-source-of-truth path added 2026-04-26.
+    """
+    await engine.register_worker("w", "/")
+    # Trailing inbound from 5 min ago — timeline alone would say busy.
+    event = await engine.enqueue_inbound("w", "do the thing")
+    import time as _time
+    event.ts = _time.time() - 300.0
+
+    # But the manager has just pushed `is_active=False` — claude is at
+    # the prompt. That observation must win.
+    changed = await engine.update_active_state("w", False)
+    assert changed is True
+    ws = engine.get_worker("w")
+    assert ws is not None
+    assert ws.status_state() == "idle"
+
+    # And the inverse: stale inbound (>10 min) but manager says active.
+    # Observation still wins — claude is generating tokens.
+    event.ts = _time.time() - 1200.0
+    await engine.update_active_state("w", True)
+    assert ws.status_state() == "busy"
+
+
+async def test_status_state_observed_active_decays_when_stale(
+    engine: BridgeEngine,
+):
+    """If the manager hasn't pushed in OBSERVED_ACTIVE_FRESHNESS_S, the
+    observation goes stale and `status_state` falls back to event-
+    timeline decay. Catches the manager-disconnect / dead-manager case."""
+    import time as _time
+    from tubemail_hub.bridge.models import OBSERVED_ACTIVE_FRESHNESS_S
+    await engine.register_worker("w", "/")
+    event = await engine.enqueue_inbound("w", "do the thing")
+    ws = engine.get_worker("w")
+    assert ws is not None
+
+    # Manager once said "busy" but hasn't reported in a long time.
+    await engine.update_active_state("w", True)
+    ws.observed_active_at = _time.time() - (OBSERVED_ACTIVE_FRESHNESS_S + 30.0)
+
+    # Trailing inbound is fresh, so the timeline-fallback says busy.
+    event.ts = _time.time() - 10.0
+    ws.last_activity = event.ts
+    assert ws.status_state() == "busy"
+
+    # And the timeline-fallback's stale-inbound branch still works.
+    event.ts = _time.time() - 1200.0
+    ws.last_activity = event.ts
+    assert ws.status_state() == "idle"
+
+
+async def test_status_state_legacy_manager_no_post_inbound_signal(
+    engine: BridgeEngine,
+):
+    """Workers running the legacy (pre-context-pct) manager produce no
+    post-inbound activity that advances last_activity. They must keep
+    the BUSY_DECAY_S hard cap as their only decay mechanism — the
+    BUSY_QUIET_S branch must NOT fire when last_activity == inbound.ts.
+    """
+    import time as _time
+    from tubemail_hub.bridge.models import BUSY_QUIET_S
+    await engine.register_worker("w", "/")
+    event = await engine.enqueue_inbound("w", "do the thing")
+    ws = engine.get_worker("w")
+    assert ws is not None
+
+    # Drive both into the past by BUSY_QUIET_S + buffer, but keep them
+    # equal — the legacy-manager case where the inbound itself was the
+    # last thing that touched last_activity.
+    elapsed = BUSY_QUIET_S + 30.0
+    event.ts = _time.time() - elapsed
+    ws.last_activity = event.ts  # no post-inbound advance
+
+    # Still inside BUSY_DECAY_S (10 min) and NO post-inbound activity →
+    # must remain busy. The QUIET_S branch is gated on
+    # `last_activity > inbound.ts` and must skip this case.
+    assert ws.status_state() == "busy"
 
 
 async def test_re_register_keeps_same_recording_session(tmp_path: Path):

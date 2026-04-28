@@ -180,6 +180,24 @@ def build_tubemail_router(
         changed = await engine.update_context_pct(worker, pct)
         return {"ok": True, "changed": changed}
 
+    @router.post("/{worker}/active", dependencies=[Depends(auth_dep)])
+    async def worker_active(worker: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Manager pushes the authoritative "is claude actively
+        processing" signal it derives from the pty screen. Body:
+        `{"is_active": bool}`. Hub stores on the worker state; the
+        roster and `tm_status` use it as the primary busy/idle source,
+        falling back to event-timeline decay only when the observation
+        is stale or absent."""
+        worker = _validate_worker_name(worker)
+        raw = body.get("is_active")
+        if not isinstance(raw, bool):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="is_active must be a boolean",
+            )
+        changed = await engine.update_active_state(worker, raw)
+        return {"ok": True, "changed": changed}
+
     if pty_bridges is not None:
         @router.post("/{worker}/pty-out", dependencies=[Depends(auth_dep)])
         async def pty_out(worker: str, request: Request) -> dict[str, Any]:

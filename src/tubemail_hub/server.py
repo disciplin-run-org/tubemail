@@ -10,11 +10,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from tubemail_hub.bridge.api import build_api_router, build_events_router, build_flows_router
 from tubemail_hub.bridge.engine import BridgeEngine
@@ -61,6 +62,35 @@ def _version() -> str:
     if version_file.exists():
         return version_file.read_text().strip()
     return "dev"
+
+
+class _SPACacheHeaders(BaseHTTPMiddleware):
+    """Cache policy for the SPA: index.html always revalidates, hashed
+    /assets/* are immutable.
+
+    After a container rebuild, browsers cached `index.html` from before
+    the build and never see the new bundle until the user hard-refreshes.
+    Vite emits content-hashed asset filenames under /assets/, so changed
+    code gets a new URL — those are safe to cache forever; unchanged
+    assets stay in the browser cache across rebuilds. Only the small
+    `index.html` document needs revalidation.
+
+    Mounted at the FastAPI level (not on the StaticFiles app) so it
+    applies regardless of which router actually served the response.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith(".html"):
+            response.headers["Cache-Control"] = (
+                "no-cache, no-store, must-revalidate"
+            )
+        elif "/assets/" in path:
+            response.headers["Cache-Control"] = (
+                "public, max-age=31536000, immutable"
+            )
+        return response
 
 
 class _SPAStaticFiles(StaticFiles):
@@ -206,6 +236,9 @@ def create_app() -> FastAPI:
         version=version,
         lifespan=lifespan,
     )
+    # Cache policy for the SPA. Must be added before any routes so the
+    # response-rewriting wraps every handler (including StaticFiles).
+    app.add_middleware(_SPACacheHeaders)
 
     # Health endpoint — live-state metrics only (stale on-disk entries
     # from dead workers do NOT count). See

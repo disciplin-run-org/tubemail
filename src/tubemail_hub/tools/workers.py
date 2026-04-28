@@ -325,7 +325,7 @@ def register(mcp, engine: BridgeEngine) -> None:
             ],
         }
 
-    @mcp.tool
+    @mcp.tool(task=True)
     async def tm_wait_for_activity(
         worker: str, since: str | None = None, timeout_s: float = 30.0
     ) -> list[dict[str, Any]]:
@@ -335,7 +335,9 @@ def register(mcp, engine: BridgeEngine) -> None:
         polling `tm_receive` in a tight loop when you want to wait for the
         worker's reply to a `tm_send` call.
 
-        `timeout_s` defaults to 30s — caps at Claude Code's ~60s MCP call
+        Long-running by design (`task=True`): the tool returns a task ID
+        immediately and runs the wait in the background, so callers can
+        pass `timeout_s > 60` without hitting Claude Code's MCP-call
         timeout. Returns an empty list on timeout (not an error).
         """
         events = await engine.wait_for_activity(worker, since=since, timeout_s=timeout_s)
@@ -606,13 +608,20 @@ def register(mcp, engine: BridgeEngine) -> None:
             "routed_to": {"clear": manager, "message": worker},
         }
 
-    @mcp.tool
+    @mcp.tool(task=True)
     async def tm_reconnect_mcp(worker: str, server: str) -> dict[str, Any]:
         """Reconnect a failed MCP server on a worker without manual dialog driving.
 
         The worker's manager drives the /mcp dialog deterministically:
         open dialog → navigate to the named server → select Reconnect.
         Returns when the manager reports the outcome (up to ~25 s).
+
+        Long-running by design (`task=True`): the dialog driver does up
+        to 22 s of screen-polling between keystrokes, which would race
+        Claude Code's 60 s MCP timeout if a manager-disconnect storm
+        added a few extra seconds of hub latency. Returns a task ID
+        immediately, polls in the background, and surfaces the final
+        result via the standard MCP task-status protocol.
 
         Use this instead of tm_screenshot+tm_keystroke chains when an MCP
         server shows `✘ failed` in the worker's /mcp dialog. The manual
@@ -624,18 +633,30 @@ def register(mcp, engine: BridgeEngine) -> None:
         `{error, detail}` without a definitive ok flag.
         """
         manager = f"{worker}-manager"
-        await engine.enqueue_inbound(
+        # Anchor the wait at the inbound event we just enqueued — without
+        # this, wait_for_activity(since=None) returns instantly with
+        # whatever stale events are already in the manager's history,
+        # so we'd return the timeout error even when the manager
+        # eventually posts a successful reconnect_mcp_result.
+        inbound = await engine.enqueue_inbound(
             manager, f"reconnect_mcp:{server}",
             {"kind": f"reconnect_mcp:{server}"},
         )
-        events = await engine.wait_for_activity(manager, since=None, timeout_s=30.0)
-        for e in reversed(events):
-            if e.kind == "outbound" and e.meta.get("kind") == "reconnect_mcp_result":
-                import json
-                try:
-                    return json.loads(e.content)
-                except (json.JSONDecodeError, ValueError):
-                    return {"raw": e.content}
+        result_event = await engine.wait_for_matching_event(
+            manager,
+            since=inbound.event_id,
+            match=lambda e: (
+                e.kind == "outbound"
+                and e.meta.get("kind") == "reconnect_mcp_result"
+            ),
+            timeout_s=30.0,
+        )
+        if result_event is not None:
+            import json
+            try:
+                return json.loads(result_event.content)
+            except (json.JSONDecodeError, ValueError):
+                return {"raw": result_event.content}
         return {
             "error": "manager did not post a reconnect_mcp_result within 30s",
             "detail": "worker may be unresponsive; try tm_screenshot to inspect",
@@ -654,21 +675,27 @@ def register(mcp, engine: BridgeEngine) -> None:
         Returns the health data after waiting for the manager's response.
         """
         manager = f"{worker}-manager"
-        await engine.enqueue_inbound(
+        inbound = await engine.enqueue_inbound(
             manager, "health_check", {"kind": "health_check"}
         )
-        # Wait for the manager to reply with health stats
-        events = await engine.wait_for_activity(manager, since=None, timeout_s=5.0)
-        health_events = [
-            e for e in events
-            if e.kind == "outbound" and e.meta.get("kind") == "health_response"
-        ]
-        if health_events:
+        # Wait for the manager to reply with FRESH health stats. Anchor
+        # at the inbound we just sent so we don't return a stale
+        # health_response from a prior call.
+        result_event = await engine.wait_for_matching_event(
+            manager,
+            since=inbound.event_id,
+            match=lambda e: (
+                e.kind == "outbound"
+                and e.meta.get("kind") == "health_response"
+            ),
+            timeout_s=5.0,
+        )
+        if result_event is not None:
             import json
             try:
-                return json.loads(health_events[-1].content)
+                return json.loads(result_event.content)
             except (json.JSONDecodeError, ValueError):
-                return {"raw": health_events[-1].content}
+                return {"raw": result_event.content}
         return {"error": "manager did not respond within 5s", "child_alive": "unknown"}
 
     # ── Recording tools ──────────────────────────────────────────────────
@@ -772,16 +799,23 @@ def register(mcp, engine: BridgeEngine) -> None:
         Returns the screen content as plain text.
         """
         manager = f"{worker}-manager"
-        await engine.enqueue_inbound(
+        inbound = await engine.enqueue_inbound(
             manager, "screenshot", {"kind": "screenshot"}
         )
-        events = await engine.wait_for_activity(manager, since=None, timeout_s=5.0)
-        screenshots = [
-            e for e in events
-            if e.kind == "outbound" and e.meta.get("kind") == "screenshot"
-        ]
-        if screenshots:
-            return screenshots[-1].content
+        # Anchor the wait at the inbound we just sent — without this,
+        # `since=None` returns a stale screenshot from a previous call
+        # and the live screen never gets captured.
+        result_event = await engine.wait_for_matching_event(
+            manager,
+            since=inbound.event_id,
+            match=lambda e: (
+                e.kind == "outbound"
+                and e.meta.get("kind") == "screenshot"
+            ),
+            timeout_s=5.0,
+        )
+        if result_event is not None:
+            return result_event.content
         return "(manager did not respond within 5s — may be offline)"
 
     # ── Meta tools (unprefixed by convention) ────────────────────────────────

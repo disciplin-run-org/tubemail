@@ -20,7 +20,7 @@ import re
 import secrets
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from .models import (
     PermissionRequestPayload,
@@ -264,6 +264,38 @@ class BridgeEngine:
         """Update the global default applied to brand-new workers. Existing
         workers keep their per-worker setting."""
         self._recording_default = bool(enabled)
+
+    async def update_active_state(self, name: str, is_active: bool) -> bool:
+        """Record the manager's authoritative busy/idle observation for
+        a worker. Returns True if the value changed (caller can fan out
+        a UI ping if so), False otherwise.
+
+        Called from POST /tubemail/<worker>/active. The manager parses
+        claude's TUI for spinner / running-timer markers every 3s and
+        pushes the boolean only on change, so this method gets called
+        rarely under normal operation."""
+        self._check_worker_name(name)
+        async with self._lock:
+            ws = self._workers.get(name)
+            if ws is None:
+                return False
+            now = time.time()
+            ws.observed_active_at = now
+            ws.last_activity = now
+            if ws.observed_active == is_active:
+                # Heartbeat-only — refresh the freshness window without
+                # firing a global event (no UI state change).
+                self._persist(name)
+                return False
+            ws.observed_active = is_active
+            self._persist(name)
+        # State actually flipped. Quiet global ping so the roster
+        # re-fetches without waiting on the next event.
+        await self._fan_out_global_only(name, {
+            "event": "active_state",
+            "data": {"is_active": is_active},
+        })
+        return True
 
     async def update_context_pct(self, name: str, pct: int | None) -> bool:
         """Record the worker's most recent context-window % from its TUI
@@ -785,3 +817,47 @@ class BridgeEngine:
             if new:
                 return new
         return []
+
+    async def wait_for_matching_event(
+        self,
+        worker: str,
+        since: str | None,
+        match: Callable[[WorkerEvent], bool],
+        timeout_s: float = 30.0,
+    ) -> WorkerEvent | None:
+        """Block until an event matching `match` arrives, or timeout.
+
+        Differs from `wait_for_activity` in two important ways:
+
+        1. It loops past intervening events that don't match. Tools like
+           `tm_reconnect_mcp` care about a specific outbound reply
+           (`reconnect_mcp_result`); without this loop, an unrelated
+           inbound (e.g. a parallel `screenshot` request from another
+           orchestrator) would wake the wait, the tool would scan and
+           find no match, and return a false timeout.
+
+        2. It advances the `since` cursor as it iterates so the next
+           wait only blocks on TRULY new events.
+
+        Returns the matching event, or None on timeout. The matching
+        event is also written into the worker's event log; the caller
+        does not need to combine this result with `events_since`.
+        """
+        cursor = since
+        deadline = asyncio.get_event_loop().time() + timeout_s
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                return None
+            new = await self.wait_for_activity(
+                worker, cursor, timeout_s=remaining,
+            )
+            if not new:
+                return None
+            for e in new:
+                if match(e):
+                    return e
+            # Advance cursor so the next wait_for_activity blocks past
+            # the events we just looked at. Without this, the same
+            # non-matching events would re-fire instantly each loop.
+            cursor = new[-1].event_id
