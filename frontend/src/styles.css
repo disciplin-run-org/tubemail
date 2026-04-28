@@ -358,8 +358,10 @@ code, pre {
 /* `busy` icon spin — respect reduced motion */
 @keyframes spin { to { transform: rotate(360deg); } }
 .state-badge.busy svg { animation: spin 1.6s linear infinite; }
+.row-action svg.spin { animation: spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .state-badge.busy svg { animation: none; }
+  .state-badge.busy svg,
+  .row-action svg.spin { animation: none; }
 }
 
 /* ── Card (matches shared-ui Card aesthetic) ────────────────────────────── */

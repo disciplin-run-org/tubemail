@@ -3,7 +3,7 @@ import { Sidebar, type SidebarTab } from './components/Sidebar'
 import {
   AuthError, clearBearer, getBearer, getHubSettings, listPendingPermissions,
   listWorkers, setBearer, setRecordingEnabled, subscribeEvents,
-  tryDevBootstrap, updateHubSettings,
+  tryDevBootstrap, updateHubSettings, updateManager,
   type HubSettings, type Worker,
 } from './api'
 import { Roster } from './components/Roster'
@@ -215,6 +215,30 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
               }}
               onToggleRecording={async (name, enabled) => {
                 await setRecordingEnabled(name, enabled)
+                loadWorkers()
+              }}
+              onRestartManager={async (name) => {
+                if (!confirm(
+                  `Restart manager for ${name}?\n\n`
+                  + 'This re-execs the python wrapper. The Claude session '
+                  + 'is preserved via --continue. Cancel any in-flight '
+                  + 'tool calls in this worker first; they may not survive '
+                  + 'the restart.',
+                )) return
+                // Try without force first; if the worker isn't idle the
+                // server returns ok=false with a state message — surface
+                // that so the user can decide whether to force.
+                let r = await updateManager(name, false)
+                if (!r.ok && r.state && r.state !== 'idle') {
+                  if (confirm(
+                    `${name} is ${r.state}, not idle. Restart anyway?`,
+                  )) {
+                    r = await updateManager(name, true)
+                  }
+                }
+                if (!r.ok && r.error) {
+                  alert(`Restart failed: ${r.error}`)
+                }
                 loadWorkers()
               }}
             />

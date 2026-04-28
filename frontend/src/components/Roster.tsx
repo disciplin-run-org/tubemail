@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Circle, CircleDot, FolderOpen, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Circle, CircleDot, FolderOpen, RotateCw, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { Worker } from '../api'
 import { StateBadge, uiState } from './StateBadge'
@@ -30,12 +30,18 @@ export interface RosterProps {
    * POST /api/workers/{name}/recording with `{enabled}` and refreshes
    * the roster so the new state propagates back into props. */
   onToggleRecording?: (name: string, enabled: boolean) => Promise<void>
+  /** Called when the user clicks the restart icon on an online row.
+   * Caller is expected to confirm + POST
+   * /api/workers/{name}/update-manager + refresh. The Claude session
+   * is preserved (--continue); only the python manager wrapper is
+   * re-execed. */
+  onRestartManager?: (name: string) => Promise<void>
 }
 
 /** Worker roster grouped by project — matches the `tm_list_workers` MCP
  * tool layout. Click a column header to sort by that column; sorted
  * mode flattens rows (no grouping). */
-export function Roster({ workers, now, onSelect, onPurge, onToggleRecording }: RosterProps) {
+export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onRestartManager }: RosterProps) {
   const [sort, setSort] = useState<SortState>({ col: null, dir: 'asc' })
 
   // Click cycles: idle → asc → desc → idle.
@@ -115,6 +121,7 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording }: R
             onSelect={onSelect}
             onPurge={onPurge}
             onToggleRecording={onToggleRecording}
+            onRestartManager={onRestartManager}
             indent={false}
           />
         ))
@@ -130,6 +137,7 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording }: R
             onSelect={onSelect}
             onPurge={onPurge}
             onToggleRecording={onToggleRecording}
+            onRestartManager={onRestartManager}
           />
         ))
       )}
@@ -222,6 +230,7 @@ function ProjectGroup({
   onSelect,
   onPurge,
   onToggleRecording,
+  onRestartManager,
 }: {
   project: string
   members: Worker[]
@@ -231,6 +240,7 @@ function ProjectGroup({
   onSelect?: (w: Worker) => void
   onPurge?: (name: string) => void
   onToggleRecording?: (name: string, enabled: boolean) => Promise<void>
+  onRestartManager?: (name: string) => Promise<void>
 }) {
   // Single-member groups render as a flat row, no header (cleaner).
   if (members.length === 1) {
@@ -243,6 +253,7 @@ function ProjectGroup({
         onSelect={onSelect}
         onPurge={onPurge}
         onToggleRecording={onToggleRecording}
+        onRestartManager={onRestartManager}
         indent={false}
       />
     )
@@ -275,6 +286,7 @@ function ProjectGroup({
           onSelect={onSelect}
           onPurge={onPurge}
           onToggleRecording={onToggleRecording}
+          onRestartManager={onRestartManager}
           indent={true}
         />
       ))}
@@ -290,6 +302,7 @@ function RosterRow({
   onSelect,
   onPurge,
   onToggleRecording,
+  onRestartManager,
   indent,
 }: {
   worker: Worker
@@ -299,6 +312,7 @@ function RosterRow({
   onSelect?: (w: Worker) => void
   onPurge?: (name: string) => void
   onToggleRecording?: (name: string, enabled: boolean) => Promise<void>
+  onRestartManager?: (name: string) => Promise<void>
   indent: boolean
 }) {
   const state = uiState(worker)
@@ -373,7 +387,10 @@ function RosterRow({
           <RecIcon size={14} />
         </button>
       ) : <span></span>}
-      {onPurge && !worker.online && (
+      {/* Action column: trash for offline rows, restart-manager for online
+          rows whose manager is up. Mutex by state — at most one button
+          appears per row, so the column stays a fixed width. */}
+      {onPurge && !worker.online ? (
         <button
           className="row-action"
           title="Permanently remove from registry"
@@ -384,9 +401,45 @@ function RosterRow({
         >
           <Trash2 size={14} />
         </button>
+      ) : onRestartManager && worker.online && mgrUp ? (
+        <RestartManagerButton
+          worker={worker.name}
+          onRestart={onRestartManager}
+        />
+      ) : (
+        <span></span>
       )}
-      {(!onPurge || worker.online) && <span></span>}
     </div>
+  )
+}
+
+function RestartManagerButton({
+  worker,
+  onRestart,
+}: {
+  worker: string
+  onRestart: (name: string) => Promise<void>
+}) {
+  const [pending, setPending] = useState(false)
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (pending) return
+    setPending(true)
+    try {
+      await onRestart(worker)
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <button
+      className="row-action"
+      title="Restart manager (re-exec the python wrapper; Claude session preserved via --continue)"
+      disabled={pending}
+      onClick={handleClick}
+    >
+      <RotateCw size={14} className={pending ? 'spin' : undefined} />
+    </button>
   )
 }
 
