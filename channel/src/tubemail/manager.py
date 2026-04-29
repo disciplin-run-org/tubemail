@@ -183,6 +183,58 @@ def _logfile_path(session_name: str) -> Path:
     return Path(f"/tmp/claude-tm-{session_name}.log")
 
 
+def _install_stop_hook() -> None:
+    """Idempotently register the tubemail Stop hook in the user's
+    ~/.claude/settings.json so every assistant turn relays its reply
+    to tubemail's bridge.
+
+    This is part of claude-tm's contract: install tubemail, restart
+    claude-tm, the relay just works — no manual scripts needed. The
+    hook script itself self-skips when TM_WORKER_NAME is unset, so
+    non-tubemail Claude Code sessions on the same machine are
+    unaffected.
+
+    Best-effort — any failure is logged and the manager continues.
+    Without the hook installed, channel-mode workers fall back to
+    the LLM-discipline path (call the `reply` tool explicitly), which
+    is unreliable but not fatal.
+    """
+    import subprocess
+    import sys
+
+    installer = (
+        Path(__file__).resolve().parents[2]
+        / "hooks"
+        / "install_stop_hook.py"
+    )
+    if not installer.exists():
+        logger.debug("install_stop_hook.py not found at %s; skipping", installer)
+        return
+    #end if
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(installer)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode != 0:
+            logger.warning(
+                "install_stop_hook returned %d: %s",
+                proc.returncode,
+                proc.stderr.strip()[:200],
+            )
+        elif proc.stderr.strip():
+            # Installer logs to stderr only when something happened
+            # (installed-or-already-installed are both rc=0; the
+            # success case logs once when newly installed).
+            logger.info("stop hook: %s", proc.stderr.strip()[:200])
+        #end if
+    except (OSError, subprocess.TimeoutExpired) as err:
+        logger.warning("install_stop_hook failed: %s", err)
+    #end try
+
+
 # Exit code meanings for the bash restart-loop in scripts/claude-tm:
 #   0 = clean exit (user typed /exit) — bash exits too
 #   EXIT_UPDATE_MANAGER (42) = re-exec the python manager to pick up updated
@@ -1441,6 +1493,15 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
 
     pidfile = _pidfile_path(session_name)
     pidfile.write_text(str(os.getpid()))
+
+    # Idempotently install the Stop hook into the user's
+    # ~/.claude/settings.json so every assistant turn relays its reply
+    # to tubemail's bridge. Without this, the LLM has to remember to
+    # call the channel `reply` tool explicitly, which it forgets for
+    # normal chat replies — the response never reaches tm_receive and
+    # QM's auto-extract finds nothing. Self-installing on every run
+    # means "install tubemail, restart claude-tm, it just works."
+    _install_stop_hook()
 
     # Start manager channel listener
     listener: _ManagerChannelListener | None = None
