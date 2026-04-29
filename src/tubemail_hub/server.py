@@ -11,13 +11,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
 
+from tubemail_hub._shared.static import mount_spa
 from tubemail_hub.bridge.api import build_api_router, build_events_router, build_flows_router
 from tubemail_hub.bridge.engine import BridgeEngine
 from tubemail_hub.bridge.flows import FlowStore
@@ -63,81 +61,6 @@ def _version() -> str:
     if version_file.exists():
         return version_file.read_text().strip()
     return "dev"
-
-
-class _SPACacheHeaders(BaseHTTPMiddleware):
-    """Cache policy for the SPA: index.html always revalidates, hashed
-    /assets/* are immutable.
-
-    After a container rebuild, browsers cached `index.html` from before
-    the build and never see the new bundle until the user hard-refreshes.
-    Vite emits content-hashed asset filenames under /assets/, so changed
-    code gets a new URL — those are safe to cache forever; unchanged
-    assets stay in the browser cache across rebuilds. Only the small
-    `index.html` document needs revalidation.
-
-    Mounted at the FastAPI level (not on the StaticFiles app) so it
-    applies regardless of which router actually served the response.
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        path = request.url.path
-        if path == "/" or path.endswith(".html"):
-            response.headers["Cache-Control"] = (
-                "no-cache, no-store, must-revalidate"
-            )
-        elif "/assets/" in path:
-            response.headers["Cache-Control"] = (
-                "public, max-age=31536000, immutable"
-            )
-        return response
-
-
-class _SPAStaticFiles(StaticFiles):
-    """StaticFiles variant that serves `index.html` for any 404 so
-    client-side routes (e.g. `/workers/iris-qa-tm`) reload cleanly
-    instead of returning the default 404 body.
-
-    Only applies when `html=True`. Non-HTML asset 404s still 404 —
-    we only redirect to `index.html` when the client asked for a
-    document path (Accept includes text/html) or when the path has
-    no file extension.
-    """
-
-    # Path prefixes that must NEVER fall back to index.html. These are
-    # contracted-endpoint namespaces where "not implemented" must be a
-    # real 404 (OAuth 2.0 RFC 8414 discovery, etc.) — clients parse
-    # the response as JSON and fail with cryptic errors like
-    # "SDK auth failed: Failed to parse JSON" if they get index.html
-    # instead. CC's /mcp Authenticate fetches `.well-known/
-    # oauth-authorization-server` during the auth handshake; without
-    # this guard, the no-extension heuristic below would catch it and
-    # serve the SPA, breaking authenticate.
-    NO_SPA_FALLBACK_PREFIXES = (
-        ".well-known/",
-        "oauth/",
-    )
-
-    async def get_response(self, path: str, scope):
-        try:
-            return await super().get_response(path, scope)
-        except StarletteHTTPException as e:
-            if e.status_code != 404:
-                raise
-            if any(path.startswith(p) for p in self.NO_SPA_FALLBACK_PREFIXES):
-                raise
-            # Only fall back for document requests, never for an asset
-            # (e.g. `/assets/foo.js`) that actually is missing.
-            accept = ""
-            for k, v in scope.get("headers", []):
-                if k == b"accept":
-                    accept = v.decode("latin-1", "ignore")
-                    break
-            looks_like_doc = "text/html" in accept or "." not in path.rsplit("/", 1)[-1]
-            if not looks_like_doc:
-                raise
-            return await super().get_response("index.html", scope)
 
 
 async def _sweep_tickets(store: TicketStore) -> None:
@@ -281,10 +204,6 @@ def create_app() -> FastAPI:
         version=version,
         lifespan=lifespan,
     )
-    # Cache policy for the SPA. Must be added before any routes so the
-    # response-rewriting wraps every handler (including StaticFiles).
-    app.add_middleware(_SPACacheHeaders)
-
     # Health endpoint — live-state metrics only (stale on-disk entries
     # from dead workers do NOT count). See
     # jjstack/investigate/20260424-162835-health-reports-stale-state-as-live.md
@@ -336,9 +255,12 @@ def create_app() -> FastAPI:
 
     # Frontend SPA (built by `vite build` into frontend/dist). Mounted LAST
     # so all specific routes (/health, /tubemail/*, /api/*, /mcp, /ws)
-    # win first. Uses a SPA-aware StaticFiles subclass: unknown paths
-    # fall back to index.html so client-side routes like
-    # `/workers/iris-qa-tm` reload cleanly instead of 404ing.
+    # win first. mount_spa adds the cache-control middleware AND a
+    # SPA-aware StaticFiles subclass that falls back to index.html for
+    # client-side routes (`/workers/iris-qa-tm`) while still 404ing
+    # asset misses and OAuth-discovery probes (`.well-known/`, `oauth/`)
+    # — see tubemail_hub._shared.static, which is auto-synced from
+    # ai-agents/shared/mcp/static.py.
     #
     # Path resolution order (first hit wins):
     #   1. TUBEMAIL_STATIC_DIR env var — explicit operator override
@@ -356,11 +278,7 @@ def create_app() -> FastAPI:
     candidates.append(Path("/app/frontend/dist"))
     frontend_dist = next((p for p in candidates if p.exists()), None)
     if frontend_dist is not None:
-        app.mount(
-            "/",
-            _SPAStaticFiles(directory=str(frontend_dist), html=True),
-            name="spa",
-        )
+        mount_spa(app, str(frontend_dist))
         app.state.bridge_engine = engine
         app.state.mcp = mcp
         return app
