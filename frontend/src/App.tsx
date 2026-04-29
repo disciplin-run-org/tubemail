@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState, useCallback } from 'react'
 import { Sidebar, type SidebarTab } from './components/Sidebar'
 import {
   AuthError, clearBearer, getBearer, getHubSettings, listPendingPermissions,
-  listWorkers, setBearer, setRecordingEnabled, subscribeEvents,
+  getHubHealth, listWorkers, setBearer, setRecordingEnabled, subscribeEvents,
   tryDevBootstrap, updateHubSettings, updateManager,
   type HubSettings, type Worker,
 } from './api'
@@ -66,6 +66,11 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
   // share-able links work and reload preserves the tab.
   const [view, setView] = useState<View>(() => urlTab() ?? 'workers')
   const [workers, setWorkers] = useState<Worker[] | null>(null)
+  // Hub's git SHA — drives the Roster's stale/current badge. Empty
+  // when the hub can't read its own gitdir (older deploys, standalone
+  // checkouts without the bind-mount); the Roster falls back to its
+  // freshest-restart heuristic in that case.
+  const [hubSha, setHubSha] = useState<string>('')
   const [pendingFromInbox, setPendingFromInbox] = useState<number>(0)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now() / 1000)
@@ -112,6 +117,15 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
   useEffect(() => { loadWorkers() }, [loadWorkers])
   useEffect(() => { loadPendingCount() }, [loadPendingCount])
 
+  // Hub's own git SHA — fetched once on mount; refresh on the same SSE
+  // tick that refreshes the roster so a hub redeploy mid-session is
+  // visible without a hard refresh. Failures are silent: the SPA keeps
+  // working with hubSha='' and the Roster falls back to its
+  // freshest-restart heuristic.
+  useEffect(() => {
+    getHubHealth().then((h) => setHubSha(h.git_sha || '')).catch(() => {})
+  }, [])
+
   // Shared clock ticker for state-badge counters.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now() / 1000), 1000)
@@ -119,9 +133,15 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
   }, [])
 
   // Subscribe to hub-wide SSE: refetch roster + pending count on any event.
+  // Also re-fetch hub /health so a hot redeploy of the hub itself becomes
+  // visible in the badge without a manual page reload.
   useEffect(() => {
     const close = subscribeEvents(
-      () => { loadWorkers(); loadPendingCount() },
+      () => {
+        loadWorkers()
+        loadPendingCount()
+        getHubHealth().then((h) => setHubSha(h.git_sha || '')).catch(() => {})
+      },
       (e) => {
         if (e instanceof AuthError) onSignOut()
         else setError(e.message)
@@ -201,6 +221,7 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
           ) : (
             <Roster
               workers={workers}
+              hubSha={hubSha}
               now={now}
               onSelect={(w) => setOpenTerminalWorker(w.name)}
               onPurge={async (name) => {

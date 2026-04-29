@@ -84,6 +84,27 @@ export interface WorkersResponse {
   workers: Worker[]
 }
 
+export interface HubHealth {
+  status: string
+  service: string
+  version: string
+  /** Short (7-char) git SHA of the source the hub is running against,
+   * or '' when the gitdir bind-mount is missing / not a submodule.
+   * The Roster compares each manager's reported SHA against this to
+   * decide stale-vs-current — the canonical reference, immune to the
+   * "majority is stale" and "only-one-restarted" edge cases of the
+   * client-side heuristic. */
+  git_sha?: string
+}
+
+/** /health is unauthenticated by design (Docker healthchecks etc.).
+ * Doesn't go through fetchJSON because it doesn't need the bearer. */
+export async function getHubHealth(): Promise<HubHealth> {
+  const res = await fetch('/health')
+  if (!res.ok) throw new Error(`/health ${res.status}`)
+  return res.json()
+}
+
 export async function listWorkers(): Promise<Worker[]> {
   const res = await fetchJSON<WorkersResponse>('/api/workers')
   return res.workers

@@ -59,6 +59,13 @@ function freshestSha(workers: Worker[]): string {
 
 export interface RosterProps {
   workers: Worker[]
+  /** Hub's own git SHA from /health, used as the canonical "current"
+   * reference. When set, every worker on a different SHA is stale —
+   * including the case where nobody has restarted yet (the previous
+   * freshest-restart heuristic couldn't detect this). Empty string
+   * means "hub doesn't know its SHA"; the Roster falls back to the
+   * freshest-restart heuristic in that case. */
+  hubSha?: string
   now: number
   onSelect?: (worker: Worker) => void
   /** Called when the user clicks the trash icon on a row. Caller is
@@ -79,7 +86,7 @@ export interface RosterProps {
 /** Worker roster grouped by project — matches the `tm_list_workers` MCP
  * tool layout. Click a column header to sort by that column; sorted
  * mode flattens rows (no grouping). */
-export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onRestartManager }: RosterProps) {
+export function Roster({ workers, hubSha, now, onSelect, onPurge, onToggleRecording, onRestartManager }: RosterProps) {
   const [sort, setSort] = useState<SortState>({ col: null, dir: 'asc' })
 
   // Click cycles: idle → asc → desc → idle.
@@ -110,16 +117,19 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onR
     return m
   }, [workers])
 
-  // The git SHA of the most recently restarted manager. After the
-  // operator clicks ↻ on a worker, that manager's registered_at jumps
-  // to NOW, so its SHA becomes the "current" reference. This matches
-  // the operator's mental model — restarting a worker should make it
-  // canonical, not flag it as the odd one out (which the older
-  // "majority wins" heuristic did). RosterRow flags any other SHA
-  // as stale.
+  // Reference SHA for the stale/current badge. Two-tier:
+  //   1. Hub's own /health git_sha — the canonical "what's on disk
+  //      now" pointer. When set, this catches the case where every
+  //      manager is older than HEAD (a fresh git pull but no
+  //      restarts yet) — they all correctly show stale.
+  //   2. Freshest-restart fallback — the SHA of the manager with the
+  //      latest registered_at, used when the hub can't read its own
+  //      gitdir (no bind-mount, standalone checkout, etc.). Matches
+  //      the operator's mental model where clicking ↻ should make
+  //      the targeted worker canonical.
   const currentSha = useMemo(
-    () => freshestSha(workers),
-    [workers],
+    () => (hubSha && hubSha.length > 0) ? hubSha : freshestSha(workers),
+    [hubSha, workers],
   )
 
   // Drop manager entries from the row list — they render inline as the
