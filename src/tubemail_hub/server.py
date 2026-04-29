@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -189,6 +190,34 @@ def create_app() -> FastAPI:
     mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
     workers_tools.register(mcp, engine)
     register_flow_tools(mcp, engine, flow_store)
+
+    # MCP server-categories contract — see
+    # ai-agents/jjstack/20260428-mcp-server-categories.md. Tubemail is
+    # repo_agnostic: pure transport/orchestration, no per-repo state at
+    # the request layer. Identity is `worker name + flow id`. The
+    # ecosystem standard expects every server to expose a `server_info`
+    # tool so clients can discover the contract programmatically;
+    # implemented inline here because the tubemail container does not
+    # bake in the monorepo `shared/` package.
+    _SERVER_INFO_PAYLOAD = json.dumps({
+        "name": SERVER_NAME,
+        "version": version,
+        "category": "repo_agnostic",
+        "pan_repo_writes": None,
+        "pan_repo_reads": None,
+        "data_identity": "worker name + flow id — no repo concept",
+        "meta_tools": [],
+        "cross_repo_tools": [],
+    })
+
+    @mcp.tool
+    async def server_info() -> str:
+        """Return this MCP server's category metadata. Clients call this
+        once at session start to discover whether the server is
+        multi_repo / repo_agnostic / pan_repo. See
+        ai-agents/jjstack/20260428-mcp-server-categories.md."""
+        return _SERVER_INFO_PAYLOAD
+
     mcp_asgi = mcp.http_app(path="/", json_response=True)
 
     @asynccontextmanager
