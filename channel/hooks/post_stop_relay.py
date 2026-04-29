@@ -190,7 +190,16 @@ def main() -> int:
         return 0
     #end if
 
-    hub_url = os.environ.get("TUBEMAIL_HUB_URL", HUB_URL_DEFAULT).strip()
+    # Use `or HUB_URL_DEFAULT` (not get(name, default)) so that an
+    # explicitly-set EMPTY env var falls back to the default. Some
+    # tubemail launches export TUBEMAIL_HUB_URL='' instead of leaving
+    # it unset — without this guard, the script builds a relative URL
+    # like '/tubemail/{worker}/outbound' and urllib raises 'unknown url
+    # type', exit 1, and Claude Code surfaces the failure on stop.
+    hub_url = (os.environ.get("TUBEMAIL_HUB_URL") or HUB_URL_DEFAULT).strip()
+    if not hub_url:
+        hub_url = HUB_URL_DEFAULT
+    #end if
 
     raw = sys.stdin.read()
     if not raw.strip():

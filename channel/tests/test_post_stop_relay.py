@@ -265,3 +265,28 @@ def test_post_failure_does_not_raise(hook_module, monkeypatch):
         secret="abc123",
         text="my reply",
     )
+
+
+def test_empty_hub_url_env_falls_back_to_default(tmp_path: Path):
+    """Some claude-tm launches export TUBEMAIL_HUB_URL='' (empty) instead
+    of leaving it unset. os.environ.get(name, default) returns the empty
+    string in that case, NOT the default. Without the explicit `or
+    HUB_URL_DEFAULT` guard, the hook builds a relative URL
+    ('/tubemail/.../outbound') and urllib raises 'unknown url type',
+    making the hook exit non-zero on every Stop. This test pins the
+    fix so a future refactor can't reintroduce the regression.
+    """
+    payload = json.dumps({"messages": [{"role": "assistant", "content": "x"}]})
+    proc = _run_hook(
+        payload,
+        {
+            "PATH": "/usr/bin:/bin",
+            "TM_WORKER_NAME": "test-tm",
+            "TUBEMAIL_SECRET": "secret123",
+            "TUBEMAIL_HUB_URL": "",  # explicitly empty — the regression case
+        },
+    )
+    # Hook must not abort with the urllib 'unknown url type' error.
+    assert "unknown url type" not in proc.stderr
+    # Exit must be 0 — hook is best-effort, never blocks the stop.
+    assert proc.returncode == 0
