@@ -105,11 +105,27 @@ class _SPAStaticFiles(StaticFiles):
     no file extension.
     """
 
+    # Path prefixes that must NEVER fall back to index.html. These are
+    # contracted-endpoint namespaces where "not implemented" must be a
+    # real 404 (OAuth 2.0 RFC 8414 discovery, etc.) — clients parse
+    # the response as JSON and fail with cryptic errors like
+    # "SDK auth failed: Failed to parse JSON" if they get index.html
+    # instead. CC's /mcp Authenticate fetches `.well-known/
+    # oauth-authorization-server` during the auth handshake; without
+    # this guard, the no-extension heuristic below would catch it and
+    # serve the SPA, breaking authenticate.
+    NO_SPA_FALLBACK_PREFIXES = (
+        ".well-known/",
+        "oauth/",
+    )
+
     async def get_response(self, path: str, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as e:
             if e.status_code != 404:
+                raise
+            if any(path.startswith(p) for p in self.NO_SPA_FALLBACK_PREFIXES):
                 raise
             # Only fall back for document requests, never for an asset
             # (e.g. `/assets/foo.js`) that actually is missing.
