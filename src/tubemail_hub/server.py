@@ -294,8 +294,23 @@ def create_app() -> FastAPI:
     # win first. Uses a SPA-aware StaticFiles subclass: unknown paths
     # fall back to index.html so client-side routes like
     # `/workers/iris-qa-tm` reload cleanly instead of 404ing.
-    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-    if frontend_dist.exists():
+    #
+    # Path resolution order (first hit wins):
+    #   1. TUBEMAIL_STATIC_DIR env var — explicit operator override
+    #   2. parents[2]/frontend/dist  — works when source is at /app/src/...
+    #      (production Dockerfile layout; tubemail/docker-compose.override.yml)
+    #   3. /app/frontend/dist        — absolute fallback for monorepo overrides
+    #      that bind source into site-packages (parents[2] no longer points at
+    #      /app, so candidate #2 misses; the dist baked by the image is still
+    #      at /app/frontend/dist regardless of source-mount layout)
+    candidates: list[Path] = []
+    env_override = os.environ.get("TUBEMAIL_STATIC_DIR")
+    if env_override:
+        candidates.append(Path(env_override))
+    candidates.append(Path(__file__).resolve().parents[2] / "frontend" / "dist")
+    candidates.append(Path("/app/frontend/dist"))
+    frontend_dist = next((p for p in candidates if p.exists()), None)
+    if frontend_dist is not None:
         app.mount(
             "/",
             _SPAStaticFiles(directory=str(frontend_dist), html=True),
