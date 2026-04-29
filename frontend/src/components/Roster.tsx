@@ -33,23 +33,28 @@ function isDirty(v: string): boolean {
   return /\+[a-f0-9]+\.dirty/i.test(v || '')
 }
 
-/** Return the SHA used by the most workers (the "current bunch").
- * Returns '' when there are fewer than 2 distinct SHAs known — with
- * one or zero versions there's nothing to compare against, so the
- * badge stays absent. */
-function mostCommonSha(shas: Iterable<string>): string {
-  const counts = new Map<string, number>()
-  for (const s of shas) {
-    if (!s) continue
-    counts.set(s, (counts.get(s) || 0) + 1)
+/** Return the SHA of the most recently restarted manager — the one
+ * the operator most likely wanted to make "current" by clicking ↻.
+ * After a restart-manager round-trip, the manager re-registers and
+ * its registered_at jumps to NOW; using that SHA as the reference
+ * means a freshly-restarted worker is treated as authoritative even
+ * when the rest of the roster is on an older bunch.
+ *
+ * Returns '' when no connected manager has a usable SHA — suppresses
+ * the badge entirely (nothing to compare against).
+ */
+function freshestSha(workers: Worker[]): string {
+  let bestAt = -1
+  let bestSha = ''
+  for (const w of workers) {
+    if (!w.name.endsWith('-manager')) continue
+    if (!w.online) continue
+    const sha = extractSha(w.forwarder_version || '')
+    if (!sha) continue
+    const at = w.registered_at || 0
+    if (at > bestAt) { bestAt = at; bestSha = sha }
   }
-  if (counts.size < 2) return ''
-  let best = ''
-  let bestN = 0
-  for (const [sha, n] of counts) {
-    if (n > bestN) { best = sha; bestN = n }
-  }
-  return best
+  return bestSha
 }
 
 export interface RosterProps {
@@ -105,18 +110,16 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onR
     return m
   }, [workers])
 
-  // The git SHA used by the most connected managers — the "current
-  // bunch." Forwarder versions look like "0.1.0+8158fef @22:30":
-  // semver is shared across the monorepo so it carries no signal,
-  // but the SHA distinguishes managers started before vs after the
-  // last commit. RosterRow uses this to flag the minority as stale.
-  // Returns '' when there's only one SHA in play (nothing to compare),
-  // which suppresses the badge entirely.
+  // The git SHA of the most recently restarted manager. After the
+  // operator clicks ↻ on a worker, that manager's registered_at jumps
+  // to NOW, so its SHA becomes the "current" reference. This matches
+  // the operator's mental model — restarting a worker should make it
+  // canonical, not flag it as the odd one out (which the older
+  // "majority wins" heuristic did). RosterRow flags any other SHA
+  // as stale.
   const currentSha = useMemo(
-    () => mostCommonSha(
-      Array.from(managerVersion.values()).map(extractSha)
-    ),
-    [managerVersion],
+    () => freshestSha(workers),
+    [workers],
   )
 
   // Drop manager entries from the row list — they render inline as the
