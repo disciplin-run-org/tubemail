@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastmcp import FastMCP
 
 from tubemail_hub._shared.static import mount_spa
@@ -252,6 +252,18 @@ def create_app() -> FastAPI:
 
     # MCP at /mcp
     app.mount("/mcp", mcp_asgi)
+
+    # Trailing-slash tolerance: clients that POST to `/mcp` (no slash)
+    # otherwise get 405 because the mount only serves under `/mcp/`. A
+    # missing slash in someone's .mcp.json or a doc copy-paste shouldn't
+    # break a reconnect. 307 preserves method + body so the redirected
+    # POST initialize handshake lands intact at /mcp/. Mirrors the
+    # reference behavior in shared/mcp/app_factory.py:_build_app_shell.
+    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
+    async def _mcp_no_slash_redirect(request: Request) -> RedirectResponse:
+        qs = request.url.query
+        target = f"/mcp/?{qs}" if qs else "/mcp/"
+        return RedirectResponse(url=target, status_code=307)
 
     # Frontend SPA (built by `vite build` into frontend/dist). Mounted LAST
     # so all specific routes (/health, /tubemail/*, /api/*, /mcp, /ws)
