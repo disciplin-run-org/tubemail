@@ -19,6 +19,39 @@ const STATE_ORDER: Record<string, number> = {
   'offline-clean': 5,
 }
 
+/** Forwarder versions look like "0.1.0+8158fef @22:30" or
+ * "0.1.0+e0a1d64.dirty @13:11" — semver, then a git SHA, optional
+ * .dirty marker, then the manager's start-time-of-day. Semver is the
+ * same across the monorepo so it carries no information; the
+ * meaningful axis is the SHA. */
+function extractSha(v: string): string {
+  const m = (v || '').match(/\+([a-f0-9]{6,40})/i)
+  return m ? m[1] : ''
+}
+
+function isDirty(v: string): boolean {
+  return /\+[a-f0-9]+\.dirty/i.test(v || '')
+}
+
+/** Return the SHA used by the most workers (the "current bunch").
+ * Returns '' when there are fewer than 2 distinct SHAs known — with
+ * one or zero versions there's nothing to compare against, so the
+ * badge stays absent. */
+function mostCommonSha(shas: Iterable<string>): string {
+  const counts = new Map<string, number>()
+  for (const s of shas) {
+    if (!s) continue
+    counts.set(s, (counts.get(s) || 0) + 1)
+  }
+  if (counts.size < 2) return ''
+  let best = ''
+  let bestN = 0
+  for (const [sha, n] of counts) {
+    if (n > bestN) { best = sha; bestN = n }
+  }
+  return best
+}
+
 export interface RosterProps {
   workers: Worker[]
   now: number
@@ -72,6 +105,20 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onR
     return m
   }, [workers])
 
+  // The git SHA used by the most connected managers — the "current
+  // bunch." Forwarder versions look like "0.1.0+8158fef @22:30":
+  // semver is shared across the monorepo so it carries no signal,
+  // but the SHA distinguishes managers started before vs after the
+  // last commit. RosterRow uses this to flag the minority as stale.
+  // Returns '' when there's only one SHA in play (nothing to compare),
+  // which suppresses the badge entirely.
+  const currentSha = useMemo(
+    () => mostCommonSha(
+      Array.from(managerVersion.values()).map(extractSha)
+    ),
+    [managerVersion],
+  )
+
   // Drop manager entries from the row list — they render inline as the
   // mgr column on their owner.
   const realWorkers = useMemo(
@@ -117,6 +164,7 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onR
             worker={w}
             managerOnline={managerOnline}
             managerVersion={managerVersion}
+            currentSha={currentSha}
             now={now}
             onSelect={onSelect}
             onPurge={onPurge}
@@ -133,6 +181,7 @@ export function Roster({ workers, now, onSelect, onPurge, onToggleRecording, onR
             members={members}
             managerOnline={managerOnline}
             managerVersion={managerVersion}
+            currentSha={currentSha}
             now={now}
             onSelect={onSelect}
             onPurge={onPurge}
@@ -226,6 +275,7 @@ function ProjectGroup({
   members,
   managerOnline,
   managerVersion,
+  currentSha,
   now,
   onSelect,
   onPurge,
@@ -236,6 +286,7 @@ function ProjectGroup({
   members: Worker[]
   managerOnline: Map<string, boolean>
   managerVersion: Map<string, string>
+  currentSha: string
   now: number
   onSelect?: (w: Worker) => void
   onPurge?: (name: string) => void
@@ -249,6 +300,7 @@ function ProjectGroup({
         worker={members[0]}
         managerOnline={managerOnline}
         managerVersion={managerVersion}
+        currentSha={currentSha}
         now={now}
         onSelect={onSelect}
         onPurge={onPurge}
@@ -282,6 +334,7 @@ function ProjectGroup({
           worker={w}
           managerOnline={managerOnline}
           managerVersion={managerVersion}
+          currentSha={currentSha}
           now={now}
           onSelect={onSelect}
           onPurge={onPurge}
@@ -298,6 +351,7 @@ function RosterRow({
   worker,
   managerOnline,
   managerVersion,
+  currentSha,
   now,
   onSelect,
   onPurge,
@@ -308,6 +362,7 @@ function RosterRow({
   worker: Worker
   managerOnline: Map<string, boolean>
   managerVersion: Map<string, string>
+  currentSha: string
   now: number
   onSelect?: (w: Worker) => void
   onPurge?: (name: string) => void
@@ -320,6 +375,23 @@ function RosterRow({
   const mgrUp = managerOnline.get(worker.name)
   const mgrLabel = mgrUp === undefined ? '—' : mgrUp ? '🟢' : '🔴'
   const version = managerVersion.get(worker.name) || worker.forwarder_version || '—'
+
+  // Stale = manager is online + reports a real version + that version is
+  // strictly older than the newest version any other manager reports.
+  // Operator action: click the restart-manager icon to re-exec on the
+  // latest forwarder code on disk. We deliberately don't mark anything
+  // stale when the operator has only one worker, or when versions are
+  // unknown — the badge has to be informative or absent.
+  // SHA-bucket comparison: the manager is "current" if its git SHA
+  // matches the SHA used by the largest group of connected managers,
+  // otherwise it's "stale" and likely needs a restart-manager click
+  // to pick up the latest code on disk. .dirty workers (uncommitted
+  // local edits) are tagged separately so a developer's mid-flight
+  // tree doesn't masquerade as the canonical bunch.
+  const sha = extractSha(version)
+  const dirty = isDirty(version)
+  const isStale = mgrUp === true && sha !== '' && currentSha !== '' && sha !== currentSha
+  const isCurrent = mgrUp === true && sha !== '' && currentSha !== '' && sha === currentSha && !dirty
   const cwd = (worker.cwd || '').replace(/^\/home\/[^/]+\/PycharmProjects\/ai-agents\//, '')
 
   // Optimistic toggle: flip immediately on click, then let the props refresh
@@ -363,7 +435,40 @@ function RosterRow({
       <span aria-hidden="true" />
       <span className="name">{worker.name}</span>
       <span className="mgr">{mgrLabel}</span>
-      <span className="version">{version}</span>
+      <span
+        className="version"
+        title={
+          isStale
+            ? `Manager started at SHA ${sha} but the rest of the roster is on ${currentSha} — click ↻ to restart with the latest source on disk`
+            : isCurrent
+              ? `SHA ${sha} matches the rest of the roster (current bunch)`
+              : dirty
+                ? `Manager started from a working tree with uncommitted changes (.dirty)`
+                : undefined
+        }
+      >
+        {version}
+        {isStale && (
+          <span style={{
+            marginLeft: 6, padding: '0 5px', borderRadius: 3,
+            background: '#f59e0b', color: '#1f1300', fontSize: 10,
+            fontWeight: 600, verticalAlign: 'middle',
+          }}>stale</span>
+        )}
+        {isCurrent && (
+          <span style={{
+            marginLeft: 6, color: '#10b981', fontSize: 11,
+            verticalAlign: 'middle',
+          }} aria-hidden="true">✓</span>
+        )}
+        {dirty && (
+          <span style={{
+            marginLeft: 6, padding: '0 5px', borderRadius: 3,
+            background: '#6b7280', color: '#f3f4f6', fontSize: 10,
+            fontWeight: 600, verticalAlign: 'middle',
+          }}>dirty</span>
+        )}
+      </span>
       <StateBadge state={state} busySince={busySince} now={now} />
       <span className="cwd" title={worker.cwd}>{cwd || '—'}</span>
       <span
