@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "name": "tubemail",
   "description": "The central purpose of the product is to enable Claude Code users to efficiently manage and communicate with multiple worker sessions through the TubeMail hub, facilitating seamless event relaying and permission management. Its distinctive feature lies in its robust integration of real-time communic",
   "owner": "TBD",
   "rationale": "",
@@ -4269,5 +4268,6 @@
   "settings": {
     "imported_by": "code_import",
     "imported_at": "2026-05-01T09:04:19.781135+00:00"
-  }
+  },
+  "product": "tubemail"
 }
