@@ -62,6 +62,20 @@ function AuthedApp({ onSignOut }: { onSignOut: () => void }) {
   // alone. Operator gets a near-native window, no chrome.
   const popOutWorker = getPopOutWorker()
 
+  // Popout window title is the worker name so the operator can pick
+  // the right terminal out of their taskbar / window-switcher when
+  // multiple popouts are open. The default index.html title
+  // ("TubeMail") is fine for the main SPA but useless when every
+  // popout window reads the same.
+  useEffect(() => {
+    if (!popOutWorker) return
+    const previous = document.title
+    document.title = popOutWorker
+    return () => {
+      document.title = previous
+    }
+  }, [popOutWorker])
+
   // URL-driven tab routing — matches iris-qa / leanspecs convention so
   // share-able links work and reload preserves the tab.
   const [view, setView] = useState<View>(() => urlTab() ?? 'workers')
