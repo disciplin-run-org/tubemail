@@ -185,7 +185,7 @@
           "id": "mcp:2",
           "name": "Error Handling",
           "owner": "Spec_import 2026-05-02T07:55:58+00:00",
-          "rationale": "Ensures robustness even when agent logic crashes unexpectedly.",
+          "rationale": "Auxiliary surface \u2014 error responses keep the product usable but are not the core value",
           "description": "Catches exceptions from handlers and returns standardized JSON-RPC error responses with internal error codes.",
           "status": "draft",
           "test_target": "api",
@@ -327,7 +327,7 @@
             }
           ],
           "deleted": false,
-          "kano_level": 1,
+          "kano_level": 3,
           "lifecycle_order": 10
         },
         {
