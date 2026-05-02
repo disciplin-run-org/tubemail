@@ -13,146 +13,6 @@
       "capabilities": [
         {
           "id": "mcp:1",
-          "name": "Tool Discovery",
-          "owner": "TBD",
-          "rationale": "Ensures clients see updated capabilities after infrastructure restarts or rebuilds.",
-          "description": "Refreshes the available tool list in the client session after server changes.",
-          "status": "draft",
-          "test_target": "api",
-          "release_threshold": 75.0,
-          "features": [
-            {
-              "id": "mcp:1.1",
-              "name": "refresh_tools",
-              "owner": "TBD",
-              "rationale": "Maintains synchronization between server capabilities and client interfaces.",
-              "description": "Triggers a client-side refresh of the available tool catalog upon server state changes.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:1.1.1",
-                  "owner": "TBD",
-                  "rationale": "Prevents stale tool lists from blocking new functionality.",
-                  "summary": "Notifies the client when the server's available tool list has changed.",
-                  "detail": "The tool sends a ToolListChangedNotification to the connected client, followed by a confirmation message stating that the tool list has been refreshed. New and changed tools become immediately available for use.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 2,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:1.1.2",
-                  "owner": "TBD",
-                  "rationale": "Guarantees view consistency regardless of actual changes.",
-                  "summary": "Handles cases where the tool list is unchanged.",
-                  "detail": "Even if no tools have changed, the tool executes the refresh protocol to ensure the client's view is current. The message explicitly states that new and changed tools are available, which remains true by identity.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 1,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:1.1.3",
-                  "owner": "TBD",
-                  "rationale": "Simplifies the operation to a single, atomic list refresh.",
-                  "summary": "Operates on the default tool list of the server.",
-                  "detail": "The tool refreshes the standard list of tools registered on the FastMCP instance. It does not accept parameters to filter or select subsets of the list, as its purpose is a full synchronization of the available catalog.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 2,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:1.1.4",
-                  "owner": "TBD",
-                  "rationale": "Ensures the action is safe and idempotent.",
-                  "summary": "Does not modify server state, only communicates changes.",
-                  "detail": "The operation is purely a notification mechanism. It sends an MCP notification and returns a string confirmation without altering the server's internal state, file system, or worker processes.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 1,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 2
-            },
-            {
-              "id": "mcp:1.2",
-              "name": "get_instructions",
-              "owner": "TBD",
-              "rationale": "Tool surface for get_instructions",
-              "description": "Return TubeMail's server usage instructions, recommended workflows,\nand domain concepts.\n\nCall this to re-read the instructions at any time \u2014 especially after\ncontext compaction or when unsure how to use the server's tools.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:1.2.1",
-                  "owner": "TBD",
-                  "rationale": "Tool registers via @mcp.tool decorator",
-                  "summary": "get_instructions is registered as an MCP tool",
-                  "detail": "Return TubeMail's server usage instructions, recommended workflows,\nand domain concepts.\n\nCall this to re-read the instructions at any time \u2014 especially after\ncontext compaction or when unsure how to use the server's tools.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 2,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 2,
-              "lifecycle_order": 2
-            }
-          ],
-          "deleted": false,
-          "kano_level": 1
-        },
-        {
-          "id": "mcp:2",
-          "name": "Event Broadcasting",
-          "owner": "TBD",
-          "rationale": "Allows multiple clients (UI, Forwarders) to see the same events without race conditions.",
-          "description": "Distributes system events to subscribed clients using in-memory queues to ensure order and reliability.",
-          "status": "draft",
-          "test_target": "api",
-          "release_threshold": 75.0,
-          "features": [
-            {
-              "id": "mcp:2.1",
-              "name": "Subscribed Distribution",
-              "owner": "TBD",
-              "rationale": "Prevents lost events when multiple clients listen to the same stream.",
-              "description": "Manages independent queues for every active SSE subscriber to guarantee message delivery order.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:2.1.1",
-                  "owner": "TBD",
-                  "rationale": "Ensures all viewers see a consistent live feed.",
-                  "summary": "Delivers events to every subscriber's queue without losing order.",
-                  "detail": "Uses a dedicated asyncio.Queue for each subscriber connection. When an event occurs, it is written to the queue for every subscribed worker or the global feed. Subscribers receive events chronologically. Historical events are fetched via the stored list, while new events are streamed via these queues.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 3,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 3
-            }
-          ],
-          "deleted": false,
-          "kano_level": 2
-        },
-        {
-          "id": "mcp:3",
           "name": "Event Relaying",
           "owner": "TBD",
           "rationale": "Enables hub visibility and control over remote worker processes without modifying them.",
@@ -162,7 +22,7 @@
           "release_threshold": 75.0,
           "features": [
             {
-              "id": "mcp:3.1",
+              "id": "mcp:1.1",
               "name": "tm_status",
               "owner": "TBD",
               "rationale": "Allows operators to distinguish active sessions from dev builds with local edits.",
@@ -171,7 +31,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.1.1",
+                  "id": "mcp:1.1.1",
                   "owner": "TBD",
                   "rationale": "Prevents version collisions when code changes occur outside of package releases.",
                   "summary": "Reports runtime version with git state and time tag to hub upon start.",
@@ -183,7 +43,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:3.1.2",
+                  "id": "mcp:1.1.2",
                   "owner": "TBD",
                   "rationale": "Helps operators identify workers running local dev code versus official releases.",
                   "summary": "Detects and reports git repository modifications to the hub.",
@@ -199,7 +59,7 @@
               "kano_level": 6
             },
             {
-              "id": "mcp:3.2",
+              "id": "mcp:1.2",
               "name": "tm_receive",
               "owner": "TBD",
               "rationale": "Enables integration with existing Claude Code worker architecture without changing native behavior.",
@@ -208,7 +68,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.2.1",
+                  "id": "mcp:1.2.1",
                   "owner": "TBD",
                   "rationale": "Enables non-intrusive telemetry injection into existing worker instances.",
                   "summary": "Operates as a stdio subprocess communicating via JSON-RPC.",
@@ -224,7 +84,7 @@
               "kano_level": 3
             },
             {
-              "id": "mcp:3.3",
+              "id": "mcp:1.3",
               "name": "tm_my_inbox",
               "owner": "TBD",
               "rationale": "Tool surface for tm_my_inbox",
@@ -233,7 +93,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.3.1",
+                  "id": "mcp:1.3.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "tm_my_inbox is registered as an MCP tool",
@@ -250,7 +110,7 @@
               "lifecycle_order": 3
             },
             {
-              "id": "mcp:3.4",
+              "id": "mcp:1.4",
               "name": "tm_wait_for_activity",
               "owner": "TBD",
               "rationale": "Tool surface for tm_wait_for_activity",
@@ -259,7 +119,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.4.1",
+                  "id": "mcp:1.4.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "tm_wait_for_activity is registered as an MCP tool",
@@ -276,7 +136,7 @@
               "lifecycle_order": 4
             },
             {
-              "id": "mcp:3.5",
+              "id": "mcp:1.5",
               "name": "tm_interrupt",
               "owner": "TBD",
               "rationale": "Tool surface for tm_interrupt",
@@ -285,7 +145,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.5.1",
+                  "id": "mcp:1.5.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "tm_interrupt is registered as an MCP tool",
@@ -302,7 +162,7 @@
               "lifecycle_order": 5
             },
             {
-              "id": "mcp:3.6",
+              "id": "mcp:1.6",
               "name": "tm_recording_status",
               "owner": "TBD",
               "rationale": "Tool surface for tm_recording_status",
@@ -311,7 +171,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:3.6.1",
+                  "id": "mcp:1.6.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "tm_recording_status is registered as an MCP tool",
@@ -329,10 +189,100 @@
             }
           ],
           "deleted": false,
-          "kano_level": 2
+          "kano_level": 2,
+          "lifecycle_order": 0
         },
         {
-          "id": "mcp:4",
+          "id": "mcp:2",
+          "name": "Worker Lifecycle",
+          "owner": "TBD",
+          "rationale": "Ensures every remote session has a valid, stored identity.",
+          "description": "Manages creation, validation, and persistence of individual worker states within the system.",
+          "status": "draft",
+          "test_target": "api",
+          "release_threshold": 75.0,
+          "features": [
+            {
+              "id": "mcp:2.1",
+              "name": "State Persistence",
+              "owner": "TBD",
+              "rationale": "Survives hub restarts and enables audit trails.",
+              "description": "Stores and retrieves worker metadata in JSON files for durability.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:2.1.1",
+                  "owner": "TBD",
+                  "rationale": "Recovers state without crashing on partial corruption.",
+                  "summary": "Loads all active worker states from disk into memory on startup.",
+                  "detail": "Scans the workers directory for JSON files. Validates each filename against a strict regex to prevent path traversal attacks. Parses the JSON content into a WorkerState object. If a parser error occurs, it logs a warning and skips that specific file to prevent a single corrupt file from halting the entire system.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 3,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:2.1.2",
+                  "owner": "TBD",
+                  "rationale": "Prevents attackers from writing state outside the allowed directory.",
+                  "summary": "Safely enforces valid worker name formats to prevent directory traversal.",
+                  "detail": "Validates worker names against a regex allowing alphanumeric characters, spaces, dots, and hyphens. Rejects any name containing '../'. Logs a validation error for malformed inputs. Only allows names starting with an alphanumeric character to ensure clean file stems.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 3,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 3
+            },
+            {
+              "id": "mcp:2.2",
+              "name": "Lifecycle Management",
+              "owner": "TBD",
+              "rationale": "Controls which workers participate in the hub.",
+              "description": "Registers and unregisters remote worker sessions.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:2.2.1",
+                  "owner": "TBD",
+                  "rationale": "Establishes a secure worker identity in the system.",
+                  "summary": "Worker registration with validation and cursor generation.",
+                  "detail": "Accepts a worker name and configuration, validates the name against ecosystem conventions (alphanumeric, spaces, dots, dashes), registers the worker with the bridge engine, and returns a registration cursor for subsequent event correlation. Rejects requests with invalid names or paths that escape the workers directory.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 10,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:2.2.2",
+                  "owner": "TBD",
+                  "rationale": "Allows operators to distinguish clean exits from crashes in dashboards.",
+                  "summary": "Worker cleanup via goodbye or unregister.",
+                  "detail": "Processes requests to remove workers from the active roster. Distinguishes between a clean shutdown initiated by the worker (goodbye) which marks a clean exit, and a hard remove (unregister).",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 8,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 10
+            }
+          ],
+          "deleted": false,
+          "kano_level": 2,
+          "lifecycle_order": 10
+        },
+        {
+          "id": "mcp:3",
           "name": "MCP Connectivity Check",
           "owner": "TBD",
           "rationale": "Detect if the remote MCP server is accessible.",
@@ -342,7 +292,7 @@
           "release_threshold": 75.0,
           "features": [
             {
-              "id": "mcp:4.1",
+              "id": "mcp:3.1",
               "name": "ping",
               "owner": "TBD",
               "rationale": "Confirm the worker can reach the hub.",
@@ -351,7 +301,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:4.1.1",
+                  "id": "mcp:3.1.1",
                   "owner": "TBD",
                   "rationale": "Basic handshake test for availability.",
                   "summary": "Returns success status when the server is healthy.",
@@ -363,7 +313,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.1.2",
+                  "id": "mcp:3.1.2",
                   "owner": "TBD",
                   "rationale": "Fail fast to prevent false positives in orchestration.",
                   "summary": "Returns explicit failure when the server is simulated to be down.",
@@ -375,7 +325,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.1.3",
+                  "id": "mcp:3.1.3",
                   "owner": "TBD",
                   "rationale": "State consistency across concurrent clients.",
                   "summary": "Handles multiple rapid calls to ensure consistency.",
@@ -387,7 +337,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.1.4",
+                  "id": "mcp:3.1.4",
                   "owner": "TBD",
                   "rationale": "Provide context for the failure condition.",
                   "summary": "Reports internal error counts to operators.",
@@ -399,7 +349,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.1.5",
+                  "id": "mcp:3.1.5",
                   "owner": "TBD",
                   "rationale": "Confirm the service is operational again.",
                   "summary": "Validates state recovery after healing.",
@@ -415,7 +365,7 @@
               "kano_level": 2
             },
             {
-              "id": "mcp:4.2",
+              "id": "mcp:3.2",
               "name": "tm_health",
               "owner": "TBD",
               "rationale": "Allow clients to inspect their connection context.",
@@ -424,7 +374,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:4.2.1",
+                  "id": "mcp:3.2.1",
                   "owner": "TBD",
                   "rationale": "Provide metadata for debugging and context.",
                   "summary": "Returns server name and current state flags.",
@@ -436,7 +386,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.2.2",
+                  "id": "mcp:3.2.2",
                   "owner": "TBD",
                   "rationale": "Keep client view in sync with server state.",
                   "summary": "Reflects state after recovery operations.",
@@ -448,7 +398,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.2.3",
+                  "id": "mcp:3.2.3",
                   "owner": "TBD",
                   "rationale": "Prevent misidentification of services.",
                   "summary": "Validates unique server identity.",
@@ -460,7 +410,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.2.4",
+                  "id": "mcp:3.2.4",
                   "owner": "TBD",
                   "rationale": "Clean slate for subsequent test cycles.",
                   "summary": "Handles reset of state counters.",
@@ -472,7 +422,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:4.2.5",
+                  "id": "mcp:3.2.5",
                   "owner": "TBD",
                   "rationale": "Enable operator visibility into service health.",
                   "summary": "Acts as a diagnostic endpoint for manual inspection.",
@@ -488,7 +438,7 @@
               "kano_level": 3
             },
             {
-              "id": "mcp:4.3",
+              "id": "mcp:3.3",
               "name": "whoami",
               "owner": "TBD",
               "rationale": "Tool surface for whoami",
@@ -497,7 +447,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:4.3.1",
+                  "id": "mcp:3.3.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "whoami is registered as an MCP tool",
@@ -515,45 +465,34 @@
             }
           ],
           "deleted": false,
-          "kano_level": 2
+          "kano_level": 2,
+          "lifecycle_order": 20
         },
         {
-          "id": "mcp:5",
-          "name": "Worker Lifecycle",
+          "id": "mcp:4",
+          "name": "Event Broadcasting",
           "owner": "TBD",
-          "rationale": "Ensures every remote session has a valid, stored identity.",
-          "description": "Manages creation, validation, and persistence of individual worker states within the system.",
+          "rationale": "Allows multiple clients (UI, Forwarders) to see the same events without race conditions.",
+          "description": "Distributes system events to subscribed clients using in-memory queues to ensure order and reliability.",
           "status": "draft",
           "test_target": "api",
           "release_threshold": 75.0,
           "features": [
             {
-              "id": "mcp:5.1",
-              "name": "State Persistence",
+              "id": "mcp:4.1",
+              "name": "Subscribed Distribution",
               "owner": "TBD",
-              "rationale": "Survives hub restarts and enables audit trails.",
-              "description": "Stores and retrieves worker metadata in JSON files for durability.",
+              "rationale": "Prevents lost events when multiple clients listen to the same stream.",
+              "description": "Manages independent queues for every active SSE subscriber to guarantee message delivery order.",
               "status": "draft",
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:5.1.1",
+                  "id": "mcp:4.1.1",
                   "owner": "TBD",
-                  "rationale": "Recovers state without crashing on partial corruption.",
-                  "summary": "Loads all active worker states from disk into memory on startup.",
-                  "detail": "Scans the workers directory for JSON files. Validates each filename against a strict regex to prevent path traversal attacks. Parses the JSON content into a WorkerState object. If a parser error occurs, it logs a warning and skips that specific file to prevent a single corrupt file from halting the entire system.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 3,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:5.1.2",
-                  "owner": "TBD",
-                  "rationale": "Prevents attackers from writing state outside the allowed directory.",
-                  "summary": "Safely enforces valid worker name formats to prevent directory traversal.",
-                  "detail": "Validates worker names against a regex allowing alphanumeric characters, spaces, dots, and hyphens. Rejects any name containing '../'. Logs a validation error for malformed inputs. Only allows names starting with an alphanumeric character to ensure clean file stems.",
+                  "rationale": "Ensures all viewers see a consistent live feed.",
+                  "summary": "Delivers events to every subscriber's queue without losing order.",
+                  "detail": "Uses a dedicated asyncio.Queue for each subscriber connection. When an event occurs, it is written to the queue for every subscribed worker or the global feed. Subscribers receive events chronologically. Historical events are fetched via the stored list, while new events are streamed via these queues.",
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
@@ -563,47 +502,113 @@
               ],
               "deleted": false,
               "kano_level": 3
+            }
+          ],
+          "deleted": false,
+          "kano_level": 2,
+          "lifecycle_order": 30
+        },
+        {
+          "id": "mcp:5",
+          "name": "Tool Discovery",
+          "owner": "TBD",
+          "rationale": "Ensures clients see updated capabilities after infrastructure restarts or rebuilds.",
+          "description": "Refreshes the available tool list in the client session after server changes.",
+          "status": "draft",
+          "test_target": "api",
+          "release_threshold": 75.0,
+          "features": [
+            {
+              "id": "mcp:5.1",
+              "name": "refresh_tools",
+              "owner": "TBD",
+              "rationale": "Maintains synchronization between server capabilities and client interfaces.",
+              "description": "Triggers a client-side refresh of the available tool catalog upon server state changes.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:5.1.1",
+                  "owner": "TBD",
+                  "rationale": "Prevents stale tool lists from blocking new functionality.",
+                  "summary": "Notifies the client when the server's available tool list has changed.",
+                  "detail": "The tool sends a ToolListChangedNotification to the connected client, followed by a confirmation message stating that the tool list has been refreshed. New and changed tools become immediately available for use.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 2,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:5.1.2",
+                  "owner": "TBD",
+                  "rationale": "Guarantees view consistency regardless of actual changes.",
+                  "summary": "Handles cases where the tool list is unchanged.",
+                  "detail": "Even if no tools have changed, the tool executes the refresh protocol to ensure the client's view is current. The message explicitly states that new and changed tools are available, which remains true by identity.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 1,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:5.1.3",
+                  "owner": "TBD",
+                  "rationale": "Simplifies the operation to a single, atomic list refresh.",
+                  "summary": "Operates on the default tool list of the server.",
+                  "detail": "The tool refreshes the standard list of tools registered on the FastMCP instance. It does not accept parameters to filter or select subsets of the list, as its purpose is a full synchronization of the available catalog.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 2,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:5.1.4",
+                  "owner": "TBD",
+                  "rationale": "Ensures the action is safe and idempotent.",
+                  "summary": "Does not modify server state, only communicates changes.",
+                  "detail": "The operation is purely a notification mechanism. It sends an MCP notification and returns a string confirmation without altering the server's internal state, file system, or worker processes.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 1,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 2
             },
             {
               "id": "mcp:5.2",
-              "name": "Lifecycle Management",
+              "name": "get_instructions",
               "owner": "TBD",
-              "rationale": "Controls which workers participate in the hub.",
-              "description": "Registers and unregisters remote worker sessions.",
+              "rationale": "Tool surface for get_instructions",
+              "description": "Return TubeMail's server usage instructions, recommended workflows,\nand domain concepts.\n\nCall this to re-read the instructions at any time \u2014 especially after\ncontext compaction or when unsure how to use the server's tools.",
               "status": "draft",
               "release_threshold": 75.0,
               "behaviors": [
                 {
                   "id": "mcp:5.2.1",
                   "owner": "TBD",
-                  "rationale": "Establishes a secure worker identity in the system.",
-                  "summary": "Worker registration with validation and cursor generation.",
-                  "detail": "Accepts a worker name and configuration, validates the name against ecosystem conventions (alphanumeric, spaces, dots, dashes), registers the worker with the bridge engine, and returns a registration cursor for subsequent event correlation. Rejects requests with invalid names or paths that escape the workers directory.",
+                  "rationale": "Tool registers via @mcp.tool decorator",
+                  "summary": "get_instructions is registered as an MCP tool",
+                  "detail": "Return TubeMail's server usage instructions, recommended workflows,\nand domain concepts.\n\nCall this to re-read the instructions at any time \u2014 especially after\ncontext compaction or when unsure how to use the server's tools.",
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
-                  "kano_level": 10,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:5.2.2",
-                  "owner": "TBD",
-                  "rationale": "Allows operators to distinguish clean exits from crashes in dashboards.",
-                  "summary": "Worker cleanup via goodbye or unregister.",
-                  "detail": "Processes requests to remove workers from the active roster. Distinguishes between a clean shutdown initiated by the worker (goodbye) which marks a clean exit, and a hard remove (unregister).",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 8,
+                  "kano_level": 2,
                   "deleted": false
                 }
               ],
               "deleted": false,
-              "kano_level": 10
+              "kano_level": 2,
+              "lifecycle_order": 2
             }
           ],
           "deleted": false,
-          "kano_level": 2
+          "kano_level": 4,
+          "lifecycle_order": 0
         },
         {
           "id": "mcp:6",
@@ -851,160 +856,11 @@
             }
           ],
           "deleted": false,
-          "kano_level": 6
+          "kano_level": 6,
+          "lifecycle_order": 0
         },
         {
           "id": "mcp:7",
-          "name": "Live Recording",
-          "owner": "TBD",
-          "rationale": "Adds observability and accountability, critical for production remote execution.",
-          "description": "Toggle and inspect terminal session recordings (asciinema) for audit trails.",
-          "status": "draft",
-          "test_target": "api",
-          "release_threshold": 75.0,
-          "features": [
-            {
-              "id": "mcp:7.1",
-              "name": "Recording Control",
-              "owner": "TBD",
-              "rationale": "Allows selective capture of terminal output for auditing.",
-              "description": "Enables or disables terminal recording for worker sessions.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:7.1.1",
-                  "owner": "TBD",
-                  "rationale": "Enables compliance recording without permanent overhead.",
-                  "summary": "Toggles recording state for a worker session.",
-                  "detail": "The client requests to enable or disable recording. The system updates the worker's configuration to start or stop capturing terminal output to storage.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 6,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:7.1.2",
-                  "owner": "TBD",
-                  "rationale": "Allows discovery of available audit trails.",
-                  "summary": "Lists available terminal recordings.",
-                  "detail": "The system returns a catalog of recorded sessions with metadata including duration and file paths.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 7,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:7.1.3",
-                  "owner": "TBD",
-                  "rationale": "Enables audit and debugging of past sessions.",
-                  "summary": "Retrieves a specific terminal recording file.",
-                  "detail": "The client provides a recording identifier. The system returns the asciinema or equivalent recording data for inspection.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 7,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:7.1.4",
-                  "owner": "TBD",
-                  "rationale": "Ensures audit trails are continuous even if the hub restarted.",
-                  "summary": "Automatically restarts terminal recording for workers that were recording at startup.",
-                  "detail": "When loading state, if a worker had recording enabled and the recorder service is available, it attempts to start the recording immediately. This ensures 'browser-only' workers that didn't need re-registration are still included in the recording status endpoints. If the start command fails, it logs the specific exception.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 6,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:7.1.5",
-                  "owner": "TBD",
-                  "rationale": "Ensures audit trail is preserved even if client drops",
-                  "summary": "Writes output to persistent recorder when active",
-                  "detail": "When a recorder is attached to a worker, every pty byte chunk is written to the recorder first before being sent to clients, ensuring audit trail integrity.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 7,
-                  "deleted": false
-                },
-                {
-                  "id": "mcp:7.1.6",
-                  "owner": "TBD",
-                  "rationale": "Prevents loss of recording data due to empty client count",
-                  "summary": "Keeps streaming when recorder is active",
-                  "detail": "If only a recorder is attached and no browser clients exist, the system continues streaming to the recorder, preventing premature 404 responses.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 5,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 6
-            },
-            {
-              "id": "mcp:7.2",
-              "name": "tm_recording_toggle",
-              "owner": "TBD",
-              "rationale": "Supports compliance and audit requirements.",
-              "description": "Controls the capture state of terminal sessions and exports data.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:7.2.1",
-                  "owner": "TBD",
-                  "rationale": "Preserves an immutable log of worker interactions.",
-                  "summary": "Records terminal sessions to an external asciinema-compatible format.",
-                  "detail": "When recording is enabled, the system captures the entire terminal output stream from the worker process. It writes the captured events to a temporary buffer and eventually exports them to a durable storage location. Operators can trigger an export to download the recorded session history.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 7,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 7
-            },
-            {
-              "id": "mcp:7.3",
-              "name": "Live Recording",
-              "owner": "TBD",
-              "rationale": "Provides transparency into worker behavior for auditing and debugging.",
-              "description": "Toggles and inspects terminal session recordings for audit trails.",
-              "status": "draft",
-              "release_threshold": 75.0,
-              "behaviors": [
-                {
-                  "id": "mcp:7.3.1",
-                  "owner": "TBD",
-                  "rationale": "Allows controlled retention of sensitive or transient session data.",
-                  "summary": "The system records terminal sessions and toggles recording on per-worker basis.",
-                  "detail": "Recording state is maintained in worker persistent state, allowing the hub to tee pty bytes to disk when enabled and stop when disabled.",
-                  "gherkin": "",
-                  "status": "draft",
-                  "test_scope": "functional",
-                  "kano_level": 5,
-                  "deleted": false
-                }
-              ],
-              "deleted": false,
-              "kano_level": 7
-            }
-          ],
-          "deleted": false,
-          "kano_level": 7,
-          "lifecycle_order": 3
-        },
-        {
-          "id": "mcp:8",
           "name": "Session Recording",
           "owner": "TBD",
           "rationale": "Provides non-intrusive audit trails of CLI interactions for quality assurance and debugging.",
@@ -1014,7 +870,7 @@
           "release_threshold": 75.0,
           "features": [
             {
-              "id": "mcp:8.1",
+              "id": "mcp:7.1",
               "name": "Video Capture",
               "owner": "TBD",
               "rationale": "Stores exact visual output for replay without re-running the session.",
@@ -1023,7 +879,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:8.1.1",
+                  "id": "mcp:7.1.1",
                   "owner": "TBD",
                   "rationale": "Establishes a new session with correct metadata for replay tools.",
                   "summary": "Writes a new asciinema cast file when a recording session starts for a worker.",
@@ -1035,7 +891,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:8.1.2",
+                  "id": "mcp:7.1.2",
                   "owner": "TBD",
                   "rationale": "Prevents disk overflow by splitting long sessions into manageable chunks.",
                   "summary": "Rotates files when size limit is exceeded.",
@@ -1047,7 +903,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:8.1.3",
+                  "id": "mcp:7.1.3",
                   "owner": "TBD",
                   "rationale": "Enables grep-friendly and human-readable logs without VT100 dependency.",
                   "summary": "Strips ANSI escapes for text logs.",
@@ -1059,7 +915,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:8.1.4",
+                  "id": "mcp:7.1.4",
                   "owner": "TBD",
                   "rationale": "Maintains per-worker storage bounds to prevent disk exhaustion.",
                   "summary": "Garbage collects old recording files.",
@@ -1075,7 +931,7 @@
               "kano_level": 7
             },
             {
-              "id": "mcp:8.2",
+              "id": "mcp:7.2",
               "name": "Text Log Indexing",
               "owner": "TBD",
               "rationale": "Supports rapid inspection of historical terminal output without video playback.",
@@ -1084,7 +940,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:8.2.1",
+                  "id": "mcp:7.2.1",
                   "owner": "TBD",
                   "rationale": "Reconstructs the full timeline despite file rotation.",
                   "summary": "Orders frames chronologically across multiple files.",
@@ -1096,7 +952,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:8.2.2",
+                  "id": "mcp:7.2.2",
                   "owner": "TBD",
                   "rationale": "Limits data volume for targeted audits.",
                   "summary": "Filters frames by time window.",
@@ -1108,7 +964,7 @@
                   "deleted": false
                 },
                 {
-                  "id": "mcp:8.2.3",
+                  "id": "mcp:7.2.3",
                   "owner": "TBD",
                   "rationale": "Locates specific events or errors quickly.",
                   "summary": "Searches frame content by regex pattern.",
@@ -1124,7 +980,7 @@
               "kano_level": 6
             },
             {
-              "id": "mcp:8.3",
+              "id": "mcp:7.3",
               "name": "File Naming",
               "owner": "TBD",
               "rationale": "Ensures filenames are unique and readable on all platforms.",
@@ -1133,7 +989,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:8.3.1",
+                  "id": "mcp:7.3.1",
                   "owner": "TBD",
                   "rationale": "Produces safe, sortable, and unambiguous file names.",
                   "summary": "Creates timestamped filenames without colons or spaces.",
@@ -1149,7 +1005,7 @@
               "kano_level": 5
             },
             {
-              "id": "mcp:8.4",
+              "id": "mcp:7.4",
               "name": "tm_get_recording",
               "owner": "TBD",
               "rationale": "Tool surface for tm_get_recording",
@@ -1158,7 +1014,7 @@
               "release_threshold": 75.0,
               "behaviors": [
                 {
-                  "id": "mcp:8.4.1",
+                  "id": "mcp:7.4.1",
                   "owner": "TBD",
                   "rationale": "Tool registers via @mcp.tool decorator",
                   "summary": "tm_get_recording is registered as an MCP tool",
@@ -1176,7 +1032,158 @@
             }
           ],
           "deleted": false,
-          "kano_level": 7
+          "kano_level": 7,
+          "lifecycle_order": 0
+        },
+        {
+          "id": "mcp:8",
+          "name": "Live Recording",
+          "owner": "TBD",
+          "rationale": "Adds observability and accountability, critical for production remote execution.",
+          "description": "Toggle and inspect terminal session recordings (asciinema) for audit trails.",
+          "status": "draft",
+          "test_target": "api",
+          "release_threshold": 75.0,
+          "features": [
+            {
+              "id": "mcp:8.1",
+              "name": "Recording Control",
+              "owner": "TBD",
+              "rationale": "Allows selective capture of terminal output for auditing.",
+              "description": "Enables or disables terminal recording for worker sessions.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:8.1.1",
+                  "owner": "TBD",
+                  "rationale": "Enables compliance recording without permanent overhead.",
+                  "summary": "Toggles recording state for a worker session.",
+                  "detail": "The client requests to enable or disable recording. The system updates the worker's configuration to start or stop capturing terminal output to storage.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 6,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:8.1.2",
+                  "owner": "TBD",
+                  "rationale": "Allows discovery of available audit trails.",
+                  "summary": "Lists available terminal recordings.",
+                  "detail": "The system returns a catalog of recorded sessions with metadata including duration and file paths.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 7,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:8.1.3",
+                  "owner": "TBD",
+                  "rationale": "Enables audit and debugging of past sessions.",
+                  "summary": "Retrieves a specific terminal recording file.",
+                  "detail": "The client provides a recording identifier. The system returns the asciinema or equivalent recording data for inspection.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 7,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:8.1.4",
+                  "owner": "TBD",
+                  "rationale": "Ensures audit trails are continuous even if the hub restarted.",
+                  "summary": "Automatically restarts terminal recording for workers that were recording at startup.",
+                  "detail": "When loading state, if a worker had recording enabled and the recorder service is available, it attempts to start the recording immediately. This ensures 'browser-only' workers that didn't need re-registration are still included in the recording status endpoints. If the start command fails, it logs the specific exception.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 6,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:8.1.5",
+                  "owner": "TBD",
+                  "rationale": "Ensures audit trail is preserved even if client drops",
+                  "summary": "Writes output to persistent recorder when active",
+                  "detail": "When a recorder is attached to a worker, every pty byte chunk is written to the recorder first before being sent to clients, ensuring audit trail integrity.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 7,
+                  "deleted": false
+                },
+                {
+                  "id": "mcp:8.1.6",
+                  "owner": "TBD",
+                  "rationale": "Prevents loss of recording data due to empty client count",
+                  "summary": "Keeps streaming when recorder is active",
+                  "detail": "If only a recorder is attached and no browser clients exist, the system continues streaming to the recorder, preventing premature 404 responses.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 5,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 6
+            },
+            {
+              "id": "mcp:8.2",
+              "name": "tm_recording_toggle",
+              "owner": "TBD",
+              "rationale": "Supports compliance and audit requirements.",
+              "description": "Controls the capture state of terminal sessions and exports data.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:8.2.1",
+                  "owner": "TBD",
+                  "rationale": "Preserves an immutable log of worker interactions.",
+                  "summary": "Records terminal sessions to an external asciinema-compatible format.",
+                  "detail": "When recording is enabled, the system captures the entire terminal output stream from the worker process. It writes the captured events to a temporary buffer and eventually exports them to a durable storage location. Operators can trigger an export to download the recorded session history.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 7,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 7
+            },
+            {
+              "id": "mcp:8.3",
+              "name": "Live Recording",
+              "owner": "TBD",
+              "rationale": "Provides transparency into worker behavior for auditing and debugging.",
+              "description": "Toggles and inspects terminal session recordings for audit trails.",
+              "status": "draft",
+              "release_threshold": 75.0,
+              "behaviors": [
+                {
+                  "id": "mcp:8.3.1",
+                  "owner": "TBD",
+                  "rationale": "Allows controlled retention of sensitive or transient session data.",
+                  "summary": "The system records terminal sessions and toggles recording on per-worker basis.",
+                  "detail": "Recording state is maintained in worker persistent state, allowing the hub to tee pty bytes to disk when enabled and stop when disabled.",
+                  "gherkin": "",
+                  "status": "draft",
+                  "test_scope": "functional",
+                  "kano_level": 5,
+                  "deleted": false
+                }
+              ],
+              "deleted": false,
+              "kano_level": 7
+            }
+          ],
+          "deleted": false,
+          "kano_level": 7,
+          "lifecycle_order": 10
         },
         {
           "id": "mcp:9",
@@ -1303,7 +1310,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 7
+          "kano_level": 7,
+          "lifecycle_order": 20
         },
         {
           "id": "mcp:10",
@@ -1750,7 +1758,7 @@
           ],
           "deleted": false,
           "kano_level": 8,
-          "lifecycle_order": 2
+          "lifecycle_order": 0
         },
         {
           "id": "mcp:11",
@@ -2381,7 +2389,7 @@
           ],
           "deleted": false,
           "kano_level": 9,
-          "lifecycle_order": 1
+          "lifecycle_order": 0
         },
         {
           "id": "mcp:12",
@@ -3354,7 +3362,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 10
+          "kano_level": 10,
+          "lifecycle_order": 10
         },
         {
           "id": "mcp:14",
@@ -3479,7 +3488,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 10
+          "kano_level": 10,
+          "lifecycle_order": 20
         }
       ]
     },
@@ -3528,7 +3538,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 5
+          "kano_level": 5,
+          "lifecycle_order": 0
         },
         {
           "id": "cli:2",
@@ -3567,7 +3578,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 6
+          "kano_level": 6,
+          "lifecycle_order": 0
         }
       ]
     },
@@ -3949,7 +3961,7 @@
           ],
           "deleted": false,
           "kano_level": 4,
-          "lifecycle_order": 8
+          "lifecycle_order": 0
         },
         {
           "id": "ui:2",
@@ -3989,7 +4001,7 @@
           ],
           "deleted": false,
           "kano_level": 5,
-          "lifecycle_order": 6
+          "lifecycle_order": 0
         },
         {
           "id": "ui:3",
@@ -4288,7 +4300,7 @@
           ],
           "deleted": false,
           "kano_level": 6,
-          "lifecycle_order": 5
+          "lifecycle_order": 0
         },
         {
           "id": "ui:4",
@@ -4450,7 +4462,7 @@
           ],
           "deleted": false,
           "kano_level": 7,
-          "lifecycle_order": 4
+          "lifecycle_order": 0
         },
         {
           "id": "ui:5",
@@ -4526,7 +4538,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 7
+          "kano_level": 7,
+          "lifecycle_order": 10
         },
         {
           "id": "ui:6",
@@ -4626,7 +4639,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 7
+          "kano_level": 7,
+          "lifecycle_order": 20
         },
         {
           "id": "ui:7",
@@ -4801,7 +4815,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 8
+          "kano_level": 8,
+          "lifecycle_order": 0
         },
         {
           "id": "ui:8",
@@ -4840,7 +4855,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 9
+          "kano_level": 9,
+          "lifecycle_order": 0
         }
       ]
     },
@@ -5040,7 +5056,7 @@
           ],
           "deleted": false,
           "kano_level": 3,
-          "lifecycle_order": 9
+          "lifecycle_order": 0
         },
         {
           "id": "infrastructure:2",
@@ -5129,7 +5145,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 5
+          "kano_level": 5,
+          "lifecycle_order": 0
         },
         {
           "id": "infrastructure:3",
@@ -5168,7 +5185,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 6
+          "kano_level": 6,
+          "lifecycle_order": 0
         },
         {
           "id": "infrastructure:4",
@@ -5268,7 +5286,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 9
+          "kano_level": 9,
+          "lifecycle_order": 0
         },
         {
           "id": "infrastructure:5",
@@ -5343,7 +5362,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 9
+          "kano_level": 9,
+          "lifecycle_order": 10
         },
         {
           "id": "infrastructure:6",
@@ -5541,7 +5561,8 @@
             }
           ],
           "deleted": false,
-          "kano_level": 10
+          "kano_level": 10,
+          "lifecycle_order": 0
         }
       ]
     },
