@@ -69,7 +69,7 @@ Two packages — one for each side.
 For local development:
 
 ```bash
-git clone git@github.com:JesperJurcenoks/tubemail.git
+git clone git@github.com:Disciplin-run-org/tubemail.git
 cd tubemail
 pip install -e channel/ --no-build-isolation
 pip install -e .[dev] --no-build-isolation
@@ -127,6 +127,14 @@ rebuild on the host is live without a container rebuild.
 A step-by-step walkthrough lives in [`TUTORIAL.md`](TUTORIAL.md).
 
 ## Web UI
+
+<p align="center">
+  <img src="docs/images/tubemail-workers.png" alt="TubeMail Workers tab — live roster of connected sessions" width="100%">
+</p>
+
+*The Workers tab. Color-coded status badges, manager indicator,
+context-%, recording toggle, integrated terminals — one view of every
+session.*
 
 Served on the same port as the MCP server.
 
