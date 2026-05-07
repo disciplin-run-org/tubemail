@@ -140,6 +140,70 @@ class BridgeEngine:
         tmp.write_text(ws.model_dump_json(indent=2))
         os.replace(tmp, path)
 
+    def _load_from_disk(self, name: str) -> WorkerState | None:
+        """Read a single worker's state file from disk if present and valid.
+        Returns the parsed WorkerState or None on missing/corrupt file.
+
+        Used by `_get_or_create_worker` as the second step before falling
+        back to a fresh state — without this, any code path that hits
+        `if ws is None:` on a worker missing from `_workers` (eviction,
+        fresh process pre-_load_all, race against a partial restart)
+        creates an empty state and overwrites the on-disk file with it,
+        losing every event the worker had.
+
+        Caller holds `_lock`. Failure modes (missing file, malformed JSON,
+        schema drift) all return None — the caller will fall back to
+        fresh state, same behaviour as before this helper existed.
+        """
+        try:
+            path = self._worker_file(name)
+        except ValueError:
+            return None
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            return WorkerState.model_validate(data)
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "_load_from_disk(%s): file present but unreadable (%s); "
+                "caller will create fresh state",
+                name, e,
+            )
+            return None
+
+    def _get_or_create_worker(
+        self, name: str, *, defaults: dict[str, Any] | None = None
+    ) -> WorkerState:
+        """Resolve a worker state, preferring (in order): in-memory cache,
+        on-disk file, fresh state. Inserts the resolved state into the
+        in-memory cache. Caller holds `_lock`.
+
+        This is the durability fix for QM #207 (queue 187 dogfooding):
+        before this helper, every record_*/enqueue_inbound path that
+        found `_workers[name]` empty would create a fresh WorkerState
+        and `_persist` it — overwriting the on-disk file with empty
+        events. A single eviction (or a process restart race that left
+        the file on disk but the in-memory cache empty) erased every
+        prior event for that worker silently. With this helper, the
+        on-disk file is consulted first, so an eviction is a no-op.
+        """
+        ws = self._workers.get(name)
+        if ws is not None:
+            return ws
+        ws = self._load_from_disk(name)
+        if ws is not None:
+            self._workers[name] = ws
+            return ws
+        # Truly new worker. Fresh state with the defaults the caller
+        # supplied (most callers want registered_at=now and that's all).
+        kwargs: dict[str, Any] = {"name": name, "registered_at": time.time()}
+        if defaults:
+            kwargs.update(defaults)
+        ws = WorkerState(**kwargs)
+        self._workers[name] = ws
+        return ws
+
     # ── worker lifecycle ─────────────────────────────────────────────────────
 
     async def register_worker(
@@ -152,26 +216,31 @@ class BridgeEngine:
         """
         self._check_worker_name(name)
         async with self._lock:
-            ws = self._workers.get(name)
+            # Prefer disk to fresh state — see _get_or_create_worker for why.
+            # is_new is true only when neither cache nor disk had this worker.
+            had_in_memory = name in self._workers
+            ws = self._get_or_create_worker(
+                name,
+                defaults={
+                    "cwd": cwd, "last_activity": time.time(),
+                    "forwarder_version": forwarder_version or "",
+                    "recording_enabled": self._recording_default,
+                },
+            )
             now = time.time()
-            is_new = ws is None
-            if ws is None:
-                ws = WorkerState(
-                    name=name, cwd=cwd, registered_at=now, last_activity=now,
-                    forwarder_version=forwarder_version or "",
-                    recording_enabled=self._recording_default,
-                )
-                self._workers[name] = ws
-            else:
-                ws.cwd = cwd or ws.cwd
-                ws.last_activity = now
-                if forwarder_version:
-                    ws.forwarder_version = forwarder_version
-                if ws.pending_permissions:
-                    ws.pending_permissions.clear()
-                # Re-registering = new session starting; any previous clean
-                # exit flag no longer reflects current state.
-                ws.exited_cleanly = False
+            # Whether this register is "new" depends on whether we had ANY
+            # prior state (memory or disk), not just memory. A re-register
+            # that hit disk preserves history but is not a new worker.
+            is_new = (not had_in_memory) and not ws.events and ws.registered_at >= now - 1.0
+            ws.cwd = cwd or ws.cwd
+            ws.last_activity = now
+            if forwarder_version:
+                ws.forwarder_version = forwarder_version
+            if ws.pending_permissions:
+                ws.pending_permissions.clear()
+            # Re-registering = new session starting; any previous clean
+            # exit flag no longer reflects current state.
+            ws.exited_cleanly = False
             self._persist(name)
             cursor = ws.events[-1].event_id if ws.events else ""
         # Sync the recorder to the worker's flag. Idempotent: if already
@@ -389,10 +458,7 @@ class BridgeEngine:
     ) -> WorkerEvent:
         """Orchestrator sends a message → worker inbox. Fans out to SSE subs."""
         async with self._lock:
-            ws = self._workers.get(worker)
-            if ws is None:
-                ws = WorkerState(name=worker, registered_at=time.time())
-                self._workers[worker] = ws
+            ws = self._get_or_create_worker(worker)
             event = WorkerEvent(
                 event_id=_new_event_id(),
                 ts=time.time(),
@@ -414,10 +480,7 @@ class BridgeEngine:
     ) -> WorkerEvent:
         """Worker replied via its reply tool → store for orchestrator to poll."""
         async with self._lock:
-            ws = self._workers.get(worker)
-            if ws is None:
-                ws = WorkerState(name=worker, registered_at=time.time())
-                self._workers[worker] = ws
+            ws = self._get_or_create_worker(worker)
             event = WorkerEvent(
                 event_id=_new_event_id(),
                 ts=time.time(),
@@ -443,10 +506,7 @@ class BridgeEngine:
     ) -> WorkerEvent:
         """Worker's Claude Code is waiting for tool approval."""
         async with self._lock:
-            ws = self._workers.get(worker)
-            if ws is None:
-                ws = WorkerState(name=worker, registered_at=time.time())
-                self._workers[worker] = ws
+            ws = self._get_or_create_worker(worker)
             # Dedupe by request_id
             if not any(p.request_id == payload.request_id for p in ws.pending_permissions):
                 ws.pending_permissions.append(payload)
@@ -514,10 +574,7 @@ class BridgeEngine:
 
     async def send_interrupt(self, worker: str) -> WorkerEvent:
         async with self._lock:
-            ws = self._workers.get(worker)
-            if ws is None:
-                ws = WorkerState(name=worker, registered_at=time.time())
-                self._workers[worker] = ws
+            ws = self._get_or_create_worker(worker)
             event = WorkerEvent(
                 event_id=_new_event_id(),
                 ts=time.time(),
