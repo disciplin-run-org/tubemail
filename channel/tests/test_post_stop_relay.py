@@ -250,7 +250,9 @@ def test_posts_to_outbound_endpoint(hook_module, monkeypatch):
 
 
 def test_post_failure_does_not_raise(hook_module, monkeypatch):
-    """HTTP failures must NOT propagate — the relay is best-effort."""
+    """HTTP failures must NOT propagate. The hook escalates to spool/exit2
+    in main(), but `_post_outbound` itself returns False rather than
+    raising — main() needs the boolean to drive the spool decision."""
     import urllib.error
 
     def boom(*a, **kw):
@@ -258,13 +260,16 @@ def test_post_failure_does_not_raise(hook_module, monkeypatch):
 
     monkeypatch.setattr(hook_module.urllib.request, "urlopen", boom)
 
-    # Must not raise.
-    hook_module._post_outbound(
+    # Must not raise. retries=1 + no-op sleep keeps the test fast.
+    result = hook_module._post_outbound(
         hub_url="http://localhost:8004",
         worker="leanspecs-tm",
         secret="abc123",
         text="my reply",
+        retries=1,
+        sleep_fn=lambda _s: None,
     )
+    assert result is False
 
 
 def test_empty_hub_url_env_falls_back_to_default(tmp_path: Path):
@@ -284,9 +289,15 @@ def test_empty_hub_url_env_falls_back_to_default(tmp_path: Path):
             "TM_WORKER_NAME": "test-tm",
             "TUBEMAIL_SECRET": "secret123",
             "TUBEMAIL_HUB_URL": "",  # explicitly empty — the regression case
+            # Keep retries low + sandbox the spool so this test stays fast
+            # and doesn't write to the developer's real ~/.claude/.
+            "TUBEMAIL_STOP_HOOK_RETRIES": "1",
+            "TUBEMAIL_STOP_HOOK_SPOOL_DIR": str(tmp_path / "spool"),
         },
     )
     # Hook must not abort with the urllib 'unknown url type' error.
     assert "unknown url type" not in proc.stderr
-    # Exit must be 0 — hook is best-effort, never blocks the stop.
+    # POST will fail (no real hub at localhost:8004 in tests) but the spool
+    # write succeeds, so the hook exits 0 — not 2. Exit 2 only fires when
+    # spool ALSO fails (covered by the durability test).
     assert proc.returncode == 0

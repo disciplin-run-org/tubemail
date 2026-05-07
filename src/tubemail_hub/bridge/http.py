@@ -136,6 +136,39 @@ def build_tubemail_router(
         event = await engine.record_outbound(worker, body.text, body.meta)
         return {"event_id": event.event_id, "ts": event.ts}
 
+    @router.get("/{worker}/events", dependencies=[Depends(auth_dep)])
+    async def get_events(
+        worker: str, since: str | None = None, limit: int = 50
+    ) -> dict[str, Any]:
+        """Read recent events on a worker's timeline. Forwarder-side
+        verify-readback path uses this to confirm a just-posted outbound
+        event actually persisted before declaring success — guarding
+        against the case where POST returned 2xx but the event was lost
+        in flight or rejected by a stale state replica.
+
+        `since` is an event_id; when set, returns events strictly after it.
+        Default `limit=50` is enough for the hook to find a just-posted
+        event amid concurrent activity.
+        """
+        worker = _validate_worker_name(worker)
+        if limit < 1:
+            limit = 1
+        elif limit > 500:
+            limit = 500
+        events = engine.events_since(worker, since=since, limit=limit)
+        return {
+            "events": [
+                {
+                    "event_id": e.event_id,
+                    "ts": e.ts,
+                    "kind": e.kind,
+                    "content": e.content,
+                    "meta": e.meta,
+                }
+                for e in events
+            ],
+        }
+
     @router.post("/{worker}/permission-request", dependencies=[Depends(auth_dep)])
     async def permission_request(
         worker: str, body: PermissionRequestPayload

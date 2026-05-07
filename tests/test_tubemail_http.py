@@ -99,6 +99,57 @@ def test_outbound_records_event(client: TestClient, auth_headers, app_and_engine
     assert events[0].meta == {"progress": 50}
 
 
+def test_get_events_requires_auth(client: TestClient):
+    """GET /tubemail/<w>/events is the verify-readback surface used by the
+    Stop hook. Same bearer-auth guarantee as the rest of the router."""
+    resp = client.get("/tubemail/w/events")
+    assert resp.status_code == 401
+
+
+def test_get_events_returns_recorded_events(
+    client: TestClient, auth_headers, app_and_engine
+):
+    """Stop hook posts an event then GETs to confirm it landed. Endpoint
+    returns the worker's events with event_id, ts, kind, content, meta."""
+    client.post("/tubemail/w/register", json={"cwd": "/tmp"}, headers=auth_headers)
+    post_resp = client.post(
+        "/tubemail/w/outbound",
+        json={"text": "verify me", "meta": {"kind": "stop_relay"}},
+        headers=auth_headers,
+    )
+    posted_id = post_resp.json()["event_id"]
+
+    resp = client.get("/tubemail/w/events", headers=auth_headers)
+    assert resp.status_code == 200
+    events = resp.json()["events"]
+    assert any(e["event_id"] == posted_id for e in events)
+    found = next(e for e in events if e["event_id"] == posted_id)
+    assert found["kind"] == "outbound"
+    assert found["content"] == "verify me"
+    assert found["meta"] == {"kind": "stop_relay"}
+
+
+def test_get_events_since_filter(client: TestClient, auth_headers, app_and_engine):
+    """The `since` parameter mirrors engine.events_since: returns events
+    strictly AFTER the given event_id."""
+    client.post("/tubemail/w/register", json={"cwd": "/tmp"}, headers=auth_headers)
+    first = client.post(
+        "/tubemail/w/outbound", json={"text": "one"}, headers=auth_headers
+    ).json()["event_id"]
+    second = client.post(
+        "/tubemail/w/outbound", json={"text": "two"}, headers=auth_headers
+    ).json()["event_id"]
+
+    resp = client.get(
+        f"/tubemail/w/events?since={first}", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    events = resp.json()["events"]
+    ids = [e["event_id"] for e in events]
+    assert first not in ids
+    assert second in ids
+
+
 def test_permission_request_recorded(client: TestClient, auth_headers, app_and_engine):
     _, engine = app_and_engine
     client.post(
