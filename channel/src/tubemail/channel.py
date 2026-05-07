@@ -9,6 +9,7 @@ TubeMail hub (HTTP/SSE).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -49,6 +50,12 @@ class Channel:
         self._initialized = asyncio.Event()
         self._stream_task: asyncio.Task | None = None
         self._pending_buffer = pending_buffer  # PendingBuffer | None
+        # Wire the hub's threshold-tripped health notifier through to the
+        # LLM as a `notifications/claude/channel` event. The hub fires this
+        # exactly once per outage (see UNHEALTHY_NOTIFY_THRESHOLD); the
+        # callback is set after construction to avoid a chicken-and-egg
+        # constructor dependency for callers that pre-build a HubClient.
+        self._hub._health_notifier = self._send_channel_health_notification
         self._install_handlers()
 
     # ── handler installation ────────────────────────────────────────────────
@@ -81,14 +88,53 @@ class Channel:
         }
 
     async def _handle_initialized(self, _params: Any) -> None:
-        """Client acks initialize. Start hub work now."""
+        """Client acks initialize. Start hub work now.
+
+        If the initial register fails, we surface a `channel_health`
+        notification to the LLM so it can include the warning in
+        qm-reports rather than discovering the drift after the fact. The
+        SSE pump still starts — the loop's per-connect re-register can
+        recover when the hub comes back, and we don't want a transient
+        boot-time blip to leave the worker permanently disconnected.
+        """
         logger.info("initialized ack received — starting hub stream")
         try:
             await self._hub.register(cwd=self._cwd)
-        except Exception:
-            logger.exception("hub register failed — continuing anyway")
+        except Exception as err:
+            logger.warning("hub register failed at init: %s", err)
+            await self._send_channel_health_notification({
+                "content": (
+                    "tubemail-channel: hub registration failed at init — "
+                    "replies may not reach orchestrator. "
+                    "Call channel_health() to confirm before relying on a reply."
+                ),
+                "meta": {
+                    "source": "tubemail-channel",
+                    "kind": "channel_health",
+                    "level": "error",
+                    "phase": "init",
+                    "error": str(err),
+                },
+            })
+        #end try
         self._initialized.set()
         self._stream_task = asyncio.create_task(self._pump_hub_events())
+
+    async def _send_channel_health_notification(self, payload: dict[str, Any]) -> None:
+        """Push a single `notifications/claude/channel` event with a
+        `channel_health` meta tag. Used by both init-time register
+        failure and the SSE-loop threshold trip in HubClient.
+
+        Errors are logged and dropped — the notification is purely
+        advisory; if it fails we don't want to crash the channel.
+        """
+        try:
+            await self._rpc.send_notification(
+                "notifications/claude/channel", payload
+            )
+        except Exception:
+            logger.exception("channel_health notification send failed")
+        #end try
 
     async def _handle_ping(self, _params: Any) -> dict[str, Any]:
         return {}
@@ -131,6 +177,19 @@ class Channel:
                         "properties": {},
                     },
                 },
+                {
+                    "name": "channel_health",
+                    "description": (
+                        "Return current connection state to the tubemail "
+                        "hub. Use this to verify replies will land before "
+                        "relying on them — e.g. before emitting a critical "
+                        "qm-report fence on a possibly-flapping link."
+                    ),
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
             ]
         }
 
@@ -153,11 +212,30 @@ class Channel:
             }
 
         if name == "ack":
+            # ack used to swallow forwarding errors with "ignored" — that
+            # gave the LLM a false confirmation when the hub never saw the
+            # ack. Mirror the `reply` path: any forwarding failure becomes
+            # a JsonRpcError so the caller learns the truth and can either
+            # retry or include the failure in its qm-report.
             try:
                 await self._hub.post_outbound("", {"kind": "ack"})
-            except Exception:
-                logger.exception("ack forwarding failed (ignored)")
+            except Exception as e:
+                logger.exception("ack forwarding failed")
+                raise JsonRpcError(-32603, f"hub post_outbound failed: {e}")
+            #end try
             return {"content": [{"type": "text", "text": "acked"}]}
+
+        if name == "channel_health":
+            health = self._hub.health()
+            return {
+                "content": [
+                    {"type": "text", "text": json.dumps(health)}
+                ],
+                # Also return as structuredContent so newer Claude Code
+                # versions that prefer typed responses can consume it
+                # directly without re-parsing the text payload.
+                "structuredContent": health,
+            }
 
         raise JsonRpcError(-32601, f"unknown tool: {name}")
 
