@@ -1,4 +1,4 @@
-"""claude-tm process manager.
+"""Claude-tm process manager.
 
 Runs `claude` as a child process inside a pseudo-terminal (pty), enabling
 the manager to inject CLI commands (/compact, /clear, /exit, /rename) as
@@ -18,7 +18,6 @@ maintains its own SSE subscription that survives Claude restarts.
 
 from __future__ import annotations
 
-import errno
 import fcntl
 import json
 import logging
@@ -36,9 +35,12 @@ import threading
 import time
 import tty
 from pathlib import Path
+from typing import Any
 
 import httpx
 import psutil
+
+from .local_ipc import SOCK_ENV, LocalIPCServer, default_sock_path
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +80,13 @@ def _frames_backoff_s(consecutive_failures: int) -> float:
     return _FRAMES_BACKOFF_S[idx]
 
 
-def _drain_queue(q: "queue.Queue[bytes]") -> int:
-    """Empty `q` of all currently-buffered bytes. Returns the number of
-    items dropped. Used while a frame-delivery loop is backing off so the
-    queue cannot grow unbounded during a hub outage."""
+def _drain_queue(q: queue.Queue[bytes]) -> int:
+    """Empty `q` of all currently-buffered bytes.
+
+    Returns the number of items dropped. Used while a frame-delivery
+    loop is backing off so the queue cannot grow unbounded during a hub
+    outage.
+    """
     dropped = 0
     while True:
         try:
@@ -120,39 +125,41 @@ _CONTEXT_PCT_RE = re.compile(rb"context(\d{1,3})%")
 # Whitespace/newlines are stripped by `_normalize_pty_tail` before the
 # search, so multi-line word wrap doesn't defeat the patterns.
 _ACTIVE_RE = re.compile(
-    rb"\(\d+s"                # "(8s" — running timer parenthetical
+    rb"\(\d+s"  # "(8s" — running timer parenthetical
     rb"|Mulling"
     rb"|Unfurling"
     rb"|thinking"
     rb"|stillthinking"
     rb"|thoughtfor"
-    rb"|Brewedfor"            # past-tense; lingers briefly post-completion
-    rb"|Callingtubemail"      # tool call ("Calling tubemail (ctrl+o…)")
-    rb"|Running"              # bash tool spinner sub-text ("Running…")
+    rb"|Brewedfor"  # past-tense; lingers briefly post-completion
+    rb"|Callingtubemail"  # tool call ("Calling tubemail (ctrl+o…)")
+    rb"|Running"  # bash tool spinner sub-text ("Running…")
 )
 
 
 def _is_actively_processing(tail: bytes) -> bool:
     """Return True if claude's TUI is mid-request right now.
 
-    Used by the manager to push an authoritative busy/idle signal up
-    to the hub so the roster doesn't have to guess from event-timeline
+    Used by the manager to push an authoritative busy/idle signal up to
+    the hub so the roster doesn't have to guess from event-timeline
     decay heuristics. The manager has direct line of sight to the pty;
     the hub does not.
 
     The detector is a substring match on the normalized last-screen
     tail. False positives would happen only if claude's chat content
-    itself contained one of the spinner labels — very unlikely outside
-    a doc page about claude's own UI.
+    itself contained one of the spinner labels — very unlikely outside a
+    doc page about claude's own UI.
     """
     return _ACTIVE_RE.search(_normalize_pty_tail(tail)) is not None
 
 
 def _parse_context_pct(tail: bytes) -> int | None:
-    """Return the most recent context-window percent in a normalized
-    pty tail, or None if no match. Multiple matches are possible while
-    redraws overlap; pick the LAST one because newer text is appended
-    later in the buffer."""
+    """Return the most recent context-window percent in a normalized pty tail,
+    or None if no match.
+
+    Multiple matches are possible while redraws overlap; pick the LAST
+    one because newer text is appended later in the buffer.
+    """
     matches = _CONTEXT_PCT_RE.findall(_normalize_pty_tail(tail))
     if not matches:
         return None
@@ -185,8 +192,8 @@ def _logfile_path(session_name: str) -> Path:
 
 def _install_stop_hook() -> None:
     """Idempotently register the tubemail Stop hook in the user's
-    ~/.claude/settings.json so every assistant turn relays its reply
-    to tubemail's bridge.
+    ~/.claude/settings.json so every assistant turn relays its reply to
+    tubemail's bridge.
 
     This is part of claude-tm's contract: install tubemail, restart
     claude-tm, the relay just works — no manual scripts needed. The
@@ -199,18 +206,13 @@ def _install_stop_hook() -> None:
     the LLM-discipline path (call the `reply` tool explicitly), which
     is unreliable but not fatal.
     """
-    import subprocess
     import sys
 
-    installer = (
-        Path(__file__).resolve().parents[2]
-        / "hooks"
-        / "install_stop_hook.py"
-    )
+    installer = Path(__file__).resolve().parents[2] / "hooks" / "install_stop_hook.py"
     if not installer.exists():
         logger.debug("install_stop_hook.py not found at %s; skipping", installer)
         return
-    #end if
+    # end if
     try:
         proc = subprocess.run(
             [sys.executable, str(installer)],
@@ -229,10 +231,10 @@ def _install_stop_hook() -> None:
             # (installed-or-already-installed are both rc=0; the
             # success case logs once when newly installed).
             logger.info("stop hook: %s", proc.stderr.strip()[:200])
-        #end if
+        # end if
     except (OSError, subprocess.TimeoutExpired) as err:
         logger.warning("install_stop_hook failed: %s", err)
-    #end try
+    # end try
 
 
 # Exit code meanings for the bash restart-loop in scripts/claude-tm:
@@ -246,13 +248,14 @@ EXIT_UPDATE_MANAGER = 42
 
 # /mcp dialog helpers (pure functions for testability) ─────────────────────
 
+
 def _extract_mcp_server_list(screen: str) -> list[str]:
     """Parse an /mcp dialog screen and return the server names in list order.
 
     A server row looks like "name · status" where status contains one of
-    connect / fail / auth / disabled (case-insensitive) or the ✔/✘ glyphs.
-    Section headers ("Project MCPs", "User MCPs", "claude.ai") are skipped
-    because they lack a connection-style status.
+    connect / fail / auth / disabled (case-insensitive) or the ✔/✘
+    glyphs. Section headers ("Project MCPs", "User MCPs", "claude.ai")
+    are skipped because they lack a connection-style status.
     """
     servers: list[str] = []
     for line in screen.splitlines():
@@ -372,7 +375,7 @@ class _PtyChild:
         if self._master_fd is not None:
             os.write(self._master_fd, data)
 
-    def attach_stream(self) -> "object":
+    def attach_stream(self) -> object:
         """Atomically snapshot the current screen and start streaming.
 
         Returns (initial_bytes, queue). Caller posts initial_bytes to
@@ -388,8 +391,11 @@ class _PtyChild:
         return initial, q
 
     def detach_stream(self) -> None:
-        """Stop the live-stream tap. Bytes from pump_io are no longer
-        copied to the queue. Idempotent."""
+        """Stop the live-stream tap.
+
+        Bytes from pump_io are no longer copied to the queue.
+        Idempotent.
+        """
         with self._screen_lock:
             self._stream_queue = None
 
@@ -398,21 +404,20 @@ class _PtyChild:
         if self._master_fd is None:
             return None
         try:
-            winsize = fcntl.ioctl(
-                self._master_fd, termios.TIOCGWINSZ, b"\x00" * 8
-            )
+            winsize = fcntl.ioctl(self._master_fd, termios.TIOCGWINSZ, b"\x00" * 8)
             rows, cols, _, _ = struct.unpack("HHHH", winsize)
             return cols, rows
         except OSError:
             return None
 
     def trigger_redraw(self) -> None:
-        """Force the slave-side application to redraw by toggling the
-        pty size. TUIs (Claude's Ink, vim, htop, …) redraw on SIGWINCH;
-        a one-row delta is enough to provoke it without a long visual
-        flicker. Used on web-UI attach so the cursor lands at the real
-        terminal cursor position instead of at the end of whatever
-        bytes happened to be in the screen buffer.
+        """Force the slave-side application to redraw by toggling the pty size.
+
+        TUIs (Claude's Ink, vim, htop, …) redraw on SIGWINCH; a one-row
+        delta is enough to provoke it without a long visual flicker.
+        Used on web-UI attach so the cursor lands at the real terminal
+        cursor position instead of at the end of whatever bytes happened
+        to be in the screen buffer.
         """
         if self._master_fd is None:
             return
@@ -441,7 +446,8 @@ class _PtyChild:
     def _wait_for_screen(
         self, predicate, timeout_s: float, poll_s: float = 0.15
     ) -> bool:
-        """Poll the screen buffer until predicate(text) is truthy or timeout."""
+        """Poll the screen buffer until predicate(text) is truthy or
+        timeout."""
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if predicate(self._get_screen_text()):
@@ -452,9 +458,9 @@ class _PtyChild:
     def reconnect_mcp(self, server_name: str) -> dict:
         """Deterministically drive /mcp → select server → Reconnect.
 
-        Returns {"ok": bool, "server": str, "detail": str}.
-        Meant to be called from a background thread — writes to the pty
-        and polls the screen buffer with short sleeps between steps.
+        Returns {"ok": bool, "server": str, "detail": str}. Meant to be
+        called from a background thread — writes to the pty and polls
+        the screen buffer with short sleeps between steps.
         """
         if self._master_fd is None:
             return {"ok": False, "server": server_name, "detail": "no pty"}
@@ -473,7 +479,8 @@ class _PtyChild:
             # we can't recover without knowing which mode we're in.
             os.write(master, b"\x1b")
             return {
-                "ok": False, "server": server_name,
+                "ok": False,
+                "server": server_name,
                 "detail": "/mcp dialog did not open within 5s",
             }
         time.sleep(0.3)
@@ -485,7 +492,8 @@ class _PtyChild:
             os.write(master, b"\x1b")
             servers = _extract_mcp_server_list(screen)
             return {
-                "ok": False, "server": server_name,
+                "ok": False,
+                "server": server_name,
                 "detail": f"server not found in dialog; listed: {servers}",
             }
 
@@ -502,7 +510,8 @@ class _PtyChild:
         ):
             os.write(master, b"\x1b")
             return {
-                "ok": False, "server": server_name,
+                "ok": False,
+                "server": server_name,
                 "detail": "detail view did not appear (expected Authenticate/Reconnect/Disable menu)",
             }
         time.sleep(0.3)
@@ -524,18 +533,19 @@ class _PtyChild:
 
         # Give any explicit failure message a brief window to surface.
         if self._wait_for_screen(
-            lambda s: server_name in s and (
-                "failed" in s.lower() or "error" in s.lower()
-            ),
+            lambda s: server_name in s
+            and ("failed" in s.lower() or "error" in s.lower()),
             timeout_s=2.0,
         ):
             return {
-                "ok": False, "server": server_name,
+                "ok": False,
+                "server": server_name,
                 "detail": "reconnect finished with failure marker on screen",
             }
 
         return {
-            "ok": False, "server": server_name,
+            "ok": False,
+            "server": server_name,
             "detail": "no confirmation within 20s — check manually",
         }
 
@@ -544,9 +554,9 @@ class _PtyChild:
 
         Blocks until the child exits. Returns the child's exit code.
 
-        Auto-accepts the development channels warning prompt by watching for
-        the "I am using this for local development" text in the pty output
-        and sending Enter (\\r) automatically.
+        Auto-accepts the development channels warning prompt by watching
+        for the "I am using this for local development" text in the pty
+        output and sending Enter (\\r) automatically.
         """
         stdin_fd = sys.stdin.fileno()
         master = self._master_fd
@@ -619,7 +629,9 @@ class _PtyChild:
                         with self._screen_lock:
                             self._screen_buf.extend(data)
                             if len(self._screen_buf) > self._screen_buf_max:
-                                self._screen_buf = self._screen_buf[-self._screen_buf_max:]
+                                self._screen_buf = self._screen_buf[
+                                    -self._screen_buf_max :
+                                ]
                             q = self._stream_queue
                         if q is not None:
                             try:
@@ -638,14 +650,26 @@ class _PtyChild:
                         # to let the child consume the response before we send
                         # another. Without this, a \r for dev-channels can bleed
                         # into the compact prompt that appears immediately after.
-                        if len(_accepted_groups) < len({g for _, _, _, g in _AUTO_ACCEPT_PATTERNS}):
+                        if len(_accepted_groups) < len(
+                            {g for _, _, _, g in _AUTO_ACCEPT_PATTERNS}
+                        ):
                             with self._screen_lock:
                                 tail = bytes(self._screen_buf[-_SCREEN_CHECK_SIZE:])
                             # Strip ANSI escapes AND whitespace so patterns
                             # like b"compactyourconversation" match regardless
                             # of spacing, line breaks, or formatting.
-                            clean = _ANSI_RE.sub(b"", tail).replace(b" ", b"").replace(b"\n", b"").replace(b"\r", b"")
-                            for pattern, response, label, group in _AUTO_ACCEPT_PATTERNS:
+                            clean = (
+                                _ANSI_RE.sub(b"", tail)
+                                .replace(b" ", b"")
+                                .replace(b"\n", b"")
+                                .replace(b"\r", b"")
+                            )
+                            for (
+                                pattern,
+                                response,
+                                label,
+                                group,
+                            ) in _AUTO_ACCEPT_PATTERNS:
                                 if group in _accepted_groups:
                                     continue
                                 if pattern in clean:
@@ -654,7 +678,9 @@ class _PtyChild:
                                     time.sleep(0.3)
                                     os.write(master, response)
                                     _accepted_groups.add(group)
-                                    logger.info("auto-accepted: %s (group=%s)", label, group)
+                                    logger.info(
+                                        "auto-accepted: %s (group=%s)", label, group
+                                    )
                                     # Clear screen buffer so stale text doesn't
                                     # re-trigger patterns on the next cycle.
                                     with self._screen_lock:
@@ -686,7 +712,8 @@ class _PtyChild:
                                 self._rl_retry_count += 1
                                 logger.warning(
                                     "rate-limit detected — typing 'continue' in %ds (retry #%d)",
-                                    delay_s, self._rl_retry_count,
+                                    delay_s,
+                                    self._rl_retry_count,
                                 )
                                 with self._screen_lock:
                                     self._screen_buf.clear()
@@ -747,7 +774,8 @@ class _PtyChild:
         if self._rl_retry_count > 0:
             logger.info(
                 "rate-limit: continue held for %ds — resetting retry count from %d to 0",
-                _RATE_LIMIT_RESET_AFTER_S, self._rl_retry_count,
+                _RATE_LIMIT_RESET_AFTER_S,
+                self._rl_retry_count,
             )
         self._rl_retry_count = 0
         self._rl_reset_timer = None
@@ -863,7 +891,8 @@ class _ManagerChannelListener:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         self._context_pct_thread = threading.Thread(
-            target=self._context_pct_loop, daemon=True,
+            target=self._context_pct_loop,
+            daemon=True,
         )
         self._context_pct_thread.start()
 
@@ -891,7 +920,8 @@ class _ManagerChannelListener:
         consecutive_failures = 0
         while True:
             wait_s = (
-                3.0 if consecutive_failures == 0
+                3.0
+                if consecutive_failures == 0
                 else _frames_backoff_s(consecutive_failures)
             )
             if self._stop_event.wait(wait_s):
@@ -909,7 +939,8 @@ class _ManagerChannelListener:
 
             if pct != self._last_context_pct:
                 ok = self._post_signal(
-                    self._context_pct_url(), {"pct": pct},
+                    self._context_pct_url(),
+                    {"pct": pct},
                     label="context-pct",
                 )
                 if ok:
@@ -919,7 +950,8 @@ class _ManagerChannelListener:
 
             if active != self._last_active_state:
                 ok = self._post_signal(
-                    self._active_state_url(), {"is_active": active},
+                    self._active_state_url(),
+                    {"is_active": active},
                     label="active-state",
                 )
                 if ok:
@@ -937,15 +969,25 @@ class _ManagerChannelListener:
                 consecutive_failures = 0
 
     def _post_signal(
-        self, url: str, payload: dict[str, Any], *, label: str,
+        self,
+        url: str,
+        payload: dict[str, Any],
+        *,
+        label: str,
     ) -> bool:
-        """POST a small status-signal JSON payload. Returns True on a
+        """POST a small status-signal JSON payload.
+
+        Returns True on a
         2xx-ish response, False on transport error or 4xx/5xx. Used by
         `_context_pct_loop` for the context-pct and is-active signals
-        so a 404 from one doesn't block the other."""
+        so a 404 from one doesn't block the other.
+        """
         try:
             resp = httpx.post(
-                url, json=payload, headers=self._headers, timeout=2.0,
+                url,
+                json=payload,
+                headers=self._headers,
+                timeout=2.0,
             )
             if resp.status_code < 400:
                 return True
@@ -955,7 +997,9 @@ class _ManagerChannelListener:
             log = logger.debug if resp.status_code == 404 else logger.warning
             log(
                 "%s POST %d: %s",
-                label, resp.status_code, resp.text[:120],
+                label,
+                resp.status_code,
+                resp.text[:120],
             )
             return False
         except Exception as e:
@@ -963,9 +1007,12 @@ class _ManagerChannelListener:
             return False
 
     def stop(self, clean: bool = False) -> None:
-        """Stop the listener. Set clean=True when the session is ending
-        because the user /exit'd (not on crash/update). Posts /goodbye
-        instead of /unregister so the hub records a clean exit."""
+        """Stop the listener.
+
+        Set clean=True when the session is ending because the user
+        /exit'd (not on crash/update). Posts /goodbye instead of
+        /unregister so the hub records a clean exit.
+        """
         self._stop_event.set()
         if clean:
             self._goodbye()
@@ -977,6 +1024,7 @@ class _ManagerChannelListener:
 
     def _register(self) -> None:
         from tubemail import __version__ as _fwd_version
+
         try:
             resp = httpx.post(
                 self._url("/register"),
@@ -991,16 +1039,22 @@ class _ManagerChannelListener:
             if resp.status_code >= 400:
                 logger.warning(
                     "manager registration rejected (%s %d): %s",
-                    self._name, resp.status_code, resp.text[:200],
+                    self._name,
+                    resp.status_code,
+                    resp.text[:200],
                 )
             else:
                 logger.info(
-                    "manager registered as %s (v%s)", self._name, _fwd_version,
+                    "manager registered as %s (v%s)",
+                    self._name,
+                    _fwd_version,
                 )
         except Exception as e:
             logger.warning(
                 "manager registration failed (%s): %s: %s",
-                self._name, type(e).__name__, e,
+                self._name,
+                type(e).__name__,
+                e,
             )
 
     def _unregister(self) -> None:
@@ -1011,9 +1065,11 @@ class _ManagerChannelListener:
 
     def _goodbye(self) -> None:
         """Tell the hub we're shutting down cleanly (user typed /exit).
+
         Differs from _unregister: /goodbye sets exited_cleanly=True on the
         worker state, so list_workers can distinguish clean exits from
-        crashes/hangs/kills where no POST happens."""
+        crashes/hangs/kills where no POST happens.
+        """
         try:
             httpx.post(self._url("/goodbye"), headers=self._headers, timeout=2.0)
         except Exception:
@@ -1115,7 +1171,10 @@ class _ManagerChannelListener:
                 child.send_command("/exit")
 
         elif kind == "update_manager":
-            logger.info("manager: update_manager — exiting with %d to trigger re-exec", EXIT_UPDATE_MANAGER)
+            logger.info(
+                "manager: update_manager — exiting with %d to trigger re-exec",
+                EXIT_UPDATE_MANAGER,
+            )
             self._update_manager_requested = True
             self._stop_requested = True
             if child:
@@ -1181,9 +1240,11 @@ class _ManagerChannelListener:
                 ).start()
 
     def _worker_name_for_pty(self) -> str:
-        """The worker name the browser connects to for this session. The
-        manager registered as `<session_name>-manager`; pty-out POSTs go
-        to the plain session name (that's what the browser WS targets).
+        """The worker name the browser connects to for this session.
+
+        The manager registered as `<session_name>-manager`; pty-out
+        POSTs go to the plain session name (that's what the browser WS
+        targets).
         """
         return self._session_name
 
@@ -1200,11 +1261,13 @@ class _ManagerChannelListener:
         return f"{self._hub_url}/tubemail/{self._worker_name_for_pty()}/active"
 
     def _post_pty_size(self) -> None:
-        """Tell attached browser clients the current pty cols/rows so
-        their xterm renders at the same size claude is rendering for.
-        Without this, the browser uses its FitAddon-derived size and
-        the user sees output at one size while the real terminal sees
-        it at another."""
+        """Tell attached browser clients the current pty cols/rows so their
+        xterm renders at the same size claude is rendering for.
+
+        Without this, the browser uses its FitAddon-derived size and the
+        user sees output at one size while the real terminal sees it at
+        another.
+        """
         if self._child is None:
             return
         size = self._child.pty_size()
@@ -1256,7 +1319,8 @@ class _ManagerChannelListener:
         # etc.) for that long. Fire it on a daemon thread so the SSE
         # loop stays responsive.
         threading.Thread(
-            target=self._post_pty_size, daemon=True,
+            target=self._post_pty_size,
+            daemon=True,
         ).start()
         if self._child is not None:
             try:
@@ -1274,7 +1338,9 @@ class _ManagerChannelListener:
             )
             self._pty_attach_pending = True
             return
-        logger.info("pty_attach: starting pty stream for %s", self._worker_name_for_pty())
+        logger.info(
+            "pty_attach: starting pty stream for %s", self._worker_name_for_pty()
+        )
         self._pty_stream_stop = threading.Event()
         self._pty_stream_thread = threading.Thread(
             target=self._pty_stream_loop,
@@ -1284,10 +1350,12 @@ class _ManagerChannelListener:
         self._pty_stream_thread.start()
 
     def _stop_pty_stream(self) -> None:
-        """Signal the stream thread to exit. Idempotent. Also clears
-        any pending-attach intent — pty_detach means the operator is
-        no longer asking for a stream, so we shouldn't auto-start one
-        when set_child fires next."""
+        """Signal the stream thread to exit.
+
+        Idempotent. Also clears any pending-attach intent — pty_detach
+        means the operator is no longer asking for a stream, so we
+        shouldn't auto-start one when set_child fires next.
+        """
         self._pty_attach_pending = False
         if self._pty_stream_stop is not None:
             logger.info("pty_detach: stopping pty stream")
@@ -1298,8 +1366,8 @@ class _ManagerChannelListener:
         self._pty_stream_stop = None
 
     def _pty_stream_loop(self, stop: threading.Event) -> None:
-        """Copy pty master output to the hub in real time. Runs in a
-        background thread.
+        """Copy pty master output to the hub in real time. Runs in a background
+        thread.
 
         Pumping is queue-based, not buffer-polling: pump_io appends
         every chunk read from the master FD into a bounded queue
@@ -1337,12 +1405,18 @@ class _ManagerChannelListener:
         if initial:
             try:
                 resp = httpx.post(
-                    url, content=initial,
-                    headers={**self._headers, "Content-Type": "application/octet-stream"},
+                    url,
+                    content=initial,
+                    headers={
+                        **self._headers,
+                        "Content-Type": "application/octet-stream",
+                    },
                     timeout=2.0,
                 )
                 if resp.status_code == 404:
-                    logger.debug("pty_out: hub says no clients on initial dump; stopping")
+                    logger.debug(
+                        "pty_out: hub says no clients on initial dump; stopping"
+                    )
                     child.detach_stream()
                     return
             except Exception as e:
@@ -1366,7 +1440,8 @@ class _ManagerChannelListener:
                 logger.warning(
                     "pty_out: hub unresponsive for >%ds (%d failures);"
                     " dropping stream until next pty_attach",
-                    _FRAMES_GIVE_UP_AFTER_S, consecutive_failures,
+                    _FRAMES_GIVE_UP_AFTER_S,
+                    consecutive_failures,
                 )
                 break
             try:
@@ -1388,8 +1463,12 @@ class _ManagerChannelListener:
             payload = b"".join(chunks)
             try:
                 resp = httpx.post(
-                    url, content=payload,
-                    headers={**self._headers, "Content-Type": "application/octet-stream"},
+                    url,
+                    content=payload,
+                    headers={
+                        **self._headers,
+                        "Content-Type": "application/octet-stream",
+                    },
                     timeout=2.0,
                 )
                 if resp.status_code == 404:
@@ -1397,7 +1476,9 @@ class _ManagerChannelListener:
                     break
                 if resp.status_code >= 400:
                     logger.warning(
-                        "pty_out POST %d: %s", resp.status_code, resp.text[:100],
+                        "pty_out POST %d: %s",
+                        resp.status_code,
+                        resp.text[:100],
                     )
                     raise RuntimeError(f"pty_out HTTP {resp.status_code}")
                 # Successful delivery — clear failure state.
@@ -1418,7 +1499,9 @@ class _ManagerChannelListener:
                 backoff = _frames_backoff_s(consecutive_failures)
                 logger.debug(
                     "pty_out POST failed (#%d): %s — backing off %.1fs",
-                    consecutive_failures, e, backoff,
+                    consecutive_failures,
+                    e,
+                    backoff,
                 )
                 # Drain queued chunks while we wait so the queue can't
                 # grow unbounded during an outage. pump_io already
@@ -1431,8 +1514,9 @@ class _ManagerChannelListener:
         child.detach_stream()
         logger.info("pty_stream: exited")
 
-    def _run_reconnect_mcp(self, child: "_PtyChild", server: str) -> None:
-        """Drive reconnect_mcp on a background thread, post result to the hub."""
+    def _run_reconnect_mcp(self, child: _PtyChild, server: str) -> None:
+        """Drive reconnect_mcp on a background thread, post result to the
+        hub."""
         try:
             result = child.reconnect_mcp(server)
         except Exception as e:
@@ -1468,7 +1552,9 @@ class _ManagerChannelListener:
                     timeout=httpx.Timeout(10.0, read=None),
                     headers=self._headers,
                 ) as client:
-                    with connect_sse(client, "GET", self._url("/stream")) as event_source:
+                    with connect_sse(
+                        client, "GET", self._url("/stream")
+                    ) as event_source:
                         delay = 0.5
                         for sse in event_source.iter_sse():
                             if self._stop_event.is_set():
@@ -1523,10 +1609,14 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
 
     base_cmd = [
         "claude",
-        "--name", session_name,
-        "--rc", session_name,
-        "--dangerously-load-development-channels", "server:tubemail-channel",
-        "--plugin-dir", _channel_dir,
+        "--name",
+        session_name,
+        "--rc",
+        session_name,
+        "--dangerously-load-development-channels",
+        "server:tubemail-channel",
+        "--plugin-dir",
+        _channel_dir,
     ]
     if extra_args:
         base_cmd.extend(extra_args)
@@ -1534,6 +1624,71 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
     # Set worker name in our own environment so it's inherited by the pty child,
     # which inherits it to claude, which inherits it to the channel.
     os.environ["TM_WORKER_NAME"] = session_name
+
+    # Start the local IPC server so the channel plugin can drive
+    # `/mcp` reconnect even when the tubemail hub itself is the dead
+    # MCP. Path is exported via TUBEMAIL_LOCAL_SOCK so the channel
+    # inherits it through the pty child's environment; if the bind
+    # fails we keep going without local IPC and the channel falls back
+    # to the hub-routed reconnect path.
+    sock_path = os.environ.get(SOCK_ENV, "").strip() or default_sock_path(session_name)
+    _ipc_child_lock = threading.Lock()
+    _ipc_child_ref: dict[str, _PtyChild | None] = {"child": None}
+
+    def _set_ipc_child(c: _PtyChild | None) -> None:
+        with _ipc_child_lock:
+            _ipc_child_ref["child"] = c
+
+    def _handle_local_ipc(req: dict) -> dict:
+        action = req.get("action")
+        request_id = req.get("request_id", "")
+        if action == "reconnect_mcp":
+            server = req.get("server", "")
+            if not server:
+                return {
+                    "request_id": request_id,
+                    "ok": False,
+                    "server": "",
+                    "detail": "missing 'server' in request",
+                }
+            with _ipc_child_lock:
+                c = _ipc_child_ref["child"]
+            if c is None:
+                return {
+                    "request_id": request_id,
+                    "ok": False,
+                    "server": server,
+                    "detail": "no active pty child — manager between restarts",
+                }
+            try:
+                result = c.reconnect_mcp(server)
+            except Exception as e:
+                return {
+                    "request_id": request_id,
+                    "ok": False,
+                    "server": server,
+                    "detail": f"exception: {e}",
+                }
+            return {"request_id": request_id, **result}
+        return {
+            "request_id": request_id,
+            "ok": False,
+            "error": f"unknown action: {action!r}",
+        }
+
+    ipc_server: LocalIPCServer | None = None
+    try:
+        ipc_server = LocalIPCServer(sock_path, _handle_local_ipc)
+        ipc_server.start()
+        os.environ[SOCK_ENV] = sock_path
+    except OSError as e:
+        logger.warning(
+            "local-ipc: failed to bind %s (%s) — channel will fall back to hub",
+            sock_path,
+            e,
+        )
+        ipc_server = None
+        os.environ.pop(SOCK_ENV, None)
 
     # Signal handlers — fallback control path when tubemail is down.
     # SIGUSR1 = restart (kill child, loop continues with --continue)
@@ -1572,7 +1727,9 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
             cmd = list(base_cmd)
             if restart_count > 0 and "--continue" not in cmd and "-c" not in cmd:
                 cmd.append("--continue")
-                logger.info("restarting worker '%s' (restart #%d)", session_name, restart_count)
+                logger.info(
+                    "restarting worker '%s' (restart #%d)", session_name, restart_count
+                )
                 time.sleep(2)
             else:
                 logger.info("starting worker '%s'", session_name)
@@ -1583,6 +1740,7 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
 
             if listener:
                 listener.set_child(child)
+            _set_ipc_child(child)
 
             exit_code = child.pump_io()
             child.close()
@@ -1590,10 +1748,15 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
 
             if listener:
                 listener.set_child(None)
+            _set_ipc_child(None)
 
             # Restart policy — check both tubemail channel and signal-based flags
-            restart_signal = _signal_restart or (listener.restart_requested if listener else False)
-            stop_signal = _signal_stop or (listener.stop_requested if listener else False)
+            restart_signal = _signal_restart or (
+                listener.restart_requested if listener else False
+            )
+            stop_signal = _signal_stop or (
+                listener.stop_requested if listener else False
+            )
 
             if stop_signal:
                 logger.info("stop signal received — exiting")
@@ -1602,14 +1765,20 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
                 logger.info("worker exited cleanly (code 0) — stopping")
                 break
             elif exit_code == 0 and restart_signal:
-                logger.info("worker exited with restart signal — restarting with --continue")
+                logger.info(
+                    "worker exited with restart signal — restarting with --continue"
+                )
             else:
-                logger.info("worker exited (code %d) — restarting with --continue", exit_code)
+                logger.info(
+                    "worker exited (code %d) — restarting with --continue", exit_code
+                )
 
             restart_count += 1
 
     finally:
         pidfile.unlink(missing_ok=True)
+        if ipc_server is not None:
+            ipc_server.stop()
         if listener:
             # "Clean" = the reason we fell out of the loop was "claude
             # exited code 0 without any restart/update/force-stop signal"
@@ -1631,7 +1800,10 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("usage: python -m tubemail.manager <session_name> [claude args...]", file=sys.stderr)
+        print(
+            "usage: python -m tubemail.manager <session_name> [claude args...]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     session_name = sys.argv[1]
     extra_args = sys.argv[2:] if len(sys.argv) > 2 else []

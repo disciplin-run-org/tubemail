@@ -11,10 +11,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import uuid
 from typing import Any
 
 from .hub_client import HubClient
 from .jsonrpc import JsonRpcError, JsonRpcStdio
+from .local_ipc import SOCK_ENV, LocalIPCError
+from .local_ipc import request as local_ipc_request
 
 logger = logging.getLogger(__name__)
 
@@ -102,39 +106,39 @@ class Channel:
             await self._hub.register(cwd=self._cwd)
         except Exception as err:
             logger.warning("hub register failed at init: %s", err)
-            await self._send_channel_health_notification({
-                "content": (
-                    "tubemail-channel: hub registration failed at init — "
-                    "replies may not reach orchestrator. "
-                    "Call channel_health() to confirm before relying on a reply."
-                ),
-                "meta": {
-                    "source": "tubemail-channel",
-                    "kind": "channel_health",
-                    "level": "error",
-                    "phase": "init",
-                    "error": str(err),
-                },
-            })
-        #end try
+            await self._send_channel_health_notification(
+                {
+                    "content": (
+                        "tubemail-channel: hub registration failed at init — "
+                        "replies may not reach orchestrator. "
+                        "Call channel_health() to confirm before relying on a reply."
+                    ),
+                    "meta": {
+                        "source": "tubemail-channel",
+                        "kind": "channel_health",
+                        "level": "error",
+                        "phase": "init",
+                        "error": str(err),
+                    },
+                }
+            )
+        # end try
         self._initialized.set()
         self._stream_task = asyncio.create_task(self._pump_hub_events())
 
     async def _send_channel_health_notification(self, payload: dict[str, Any]) -> None:
         """Push a single `notifications/claude/channel` event with a
-        `channel_health` meta tag. Used by both init-time register
-        failure and the SSE-loop threshold trip in HubClient.
+        `channel_health` meta tag. Used by both init-time register failure and
+        the SSE-loop threshold trip in HubClient.
 
         Errors are logged and dropped — the notification is purely
         advisory; if it fails we don't want to crash the channel.
         """
         try:
-            await self._rpc.send_notification(
-                "notifications/claude/channel", payload
-            )
+            await self._rpc.send_notification("notifications/claude/channel", payload)
         except Exception:
             logger.exception("channel_health notification send failed")
-        #end try
+        # end try
 
     async def _handle_ping(self, _params: Any) -> dict[str, Any]:
         return {}
@@ -190,6 +194,35 @@ class Channel:
                         "properties": {},
                     },
                 },
+                {
+                    "name": "reconnect_mcp",
+                    "description": (
+                        "Reconnect a failed MCP server on this worker by "
+                        "asking the local manager to drive the /mcp dialog. "
+                        "Talks to the manager over a Unix-domain socket so "
+                        "this works even when the tubemail hub itself is "
+                        "the failed MCP — the only path that does. For "
+                        "non-tubemail servers, prefer "
+                        "`mcp__tubemail__tm_self_reconnect_mcp(server)`, "
+                        "which uses the hub round-trip and gives the "
+                        "orchestrator a complete event timeline. Returns "
+                        "{ok, server, detail}."
+                    ),
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "server": {
+                                "type": "string",
+                                "description": (
+                                    "MCP server name as it appears in the "
+                                    "/mcp dialog (e.g. 'tubemail', "
+                                    "'leanspecs', 'iris-qa')."
+                                ),
+                            },
+                        },
+                        "required": ["server"],
+                    },
+                },
             ]
         }
 
@@ -205,11 +238,7 @@ class Channel:
             except Exception as e:
                 logger.exception("reply forwarding failed")
                 raise JsonRpcError(-32603, f"hub post_outbound failed: {e}")
-            return {
-                "content": [
-                    {"type": "text", "text": "delivered to tubemail"}
-                ]
-            }
+            return {"content": [{"type": "text", "text": "delivered to tubemail"}]}
 
         if name == "ack":
             # ack used to swallow forwarding errors with "ignored" — that
@@ -222,25 +251,83 @@ class Channel:
             except Exception as e:
                 logger.exception("ack forwarding failed")
                 raise JsonRpcError(-32603, f"hub post_outbound failed: {e}")
-            #end try
+            # end try
             return {"content": [{"type": "text", "text": "acked"}]}
 
         if name == "channel_health":
             health = self._hub.health()
             return {
-                "content": [
-                    {"type": "text", "text": json.dumps(health)}
-                ],
+                "content": [{"type": "text", "text": json.dumps(health)}],
                 # Also return as structuredContent so newer Claude Code
                 # versions that prefer typed responses can consume it
                 # directly without re-parsing the text payload.
                 "structuredContent": health,
             }
 
+        if name == "reconnect_mcp":
+            server = args.get("server", "")
+            if not isinstance(server, str) or not server:
+                raise JsonRpcError(
+                    -32602,
+                    "reconnect_mcp requires non-empty 'server' arg",
+                )
+            result = await self._do_reconnect_mcp(server)
+            return {
+                "content": [{"type": "text", "text": json.dumps(result)}],
+                "structuredContent": result,
+            }
+
         raise JsonRpcError(-32601, f"unknown tool: {name}")
 
+    async def _do_reconnect_mcp(self, server: str) -> dict[str, Any]:
+        """Drive a reconnect via the local manager socket, then return its
+        verdict. This is the only path that works when the tubemail hub itself
+        is the failed MCP — the channel cannot use any tm_* tool (those require
+        the hub) but the local socket is hub-independent.
+
+        The socket path is exported by the manager via
+        TUBEMAIL_LOCAL_SOCK and inherited by this process through the
+        pty child. If the env var is unset, the manager is older than
+        this feature or its bind failed — the LLM is told to use the
+        hub-routed tm_self_reconnect_mcp instead, which works for every
+        server EXCEPT tubemail itself.
+        """
+        sock_path = os.environ.get(SOCK_ENV, "").strip()
+        if not sock_path:
+            return {
+                "ok": False,
+                "server": server,
+                "detail": (
+                    f"{SOCK_ENV} not set — local IPC unavailable. Use "
+                    "mcp__tubemail__tm_self_reconnect_mcp(server) instead "
+                    "for any non-tubemail server."
+                ),
+            }
+        request_id = uuid.uuid4().hex
+        try:
+            response = await local_ipc_request(
+                sock_path,
+                {
+                    "action": "reconnect_mcp",
+                    "server": server,
+                    "request_id": request_id,
+                },
+            )
+        except LocalIPCError as e:
+            logger.warning("local-ipc reconnect_mcp failed: %s", e)
+            return {
+                "ok": False,
+                "server": server,
+                "detail": f"local IPC failed: {e}",
+            }
+        # Drop the echoed request_id from the result — the LLM doesn't
+        # need it and it makes the structured response noisier.
+        response.pop("request_id", None)
+        return response
+
     async def _handle_unknown_notification(self, method: str, params: Any) -> None:
-        """Catches permission_request, permission (resolution), and other channel notifications."""
+        """Catches permission_request, permission (resolution), and other
+        channel notifications."""
         logger.debug("unknown notification %s: %s", method, params)
 
         if method == "notifications/claude/channel/permission_request":
@@ -276,9 +363,7 @@ class Channel:
                             request_id=request_id, behavior="allow"
                         )
                     except Exception:
-                        logger.exception(
-                            "auto-resolve after matched approval failed"
-                        )
+                        logger.exception("auto-resolve after matched approval failed")
 
         elif method == "notifications/claude/channel/permission":
             # Local resolution — user approved/denied at the terminal or via hook.
@@ -297,12 +382,14 @@ class Channel:
     # ── hub → worker direction ───────────────────────────────────────────────
 
     async def _pump_hub_events(self) -> None:
-        """Subscribe to the hub SSE stream, translate events into notifications.
+        """Subscribe to the hub SSE stream, translate events into
+        notifications.
 
-        Runs in an infinite loop — if the stream crashes (hub restart, network
-        blip), it logs and re-enters the stream.  The hub_client.stream()
-        generator handles reconnect + re-registration internally; this outer
-        loop catches any escaping exceptions so the task stays alive.
+        Runs in an infinite loop — if the stream crashes (hub restart,
+        network blip), it logs and re-enters the stream.  The
+        hub_client.stream() generator handles reconnect + re-
+        registration internally; this outer loop catches any escaping
+        exceptions so the task stays alive.
         """
         while True:
             try:
