@@ -71,6 +71,33 @@ in this session, the link is unhealthy and your reply may not reach the
 orchestrator. In that case, surface the status in your visible reply so the
 human reading the timeline can see it.
 
+## Slash commands
+
+Installing this plugin also installs three slash commands the LLM can invoke
+(or that the user can type) inside the worker session. They live in
+`channel/commands/` and are auto-discovered by Claude Code at plugin load.
+
+| Command | What it does |
+|---|---|
+| `/restart` | Cleanly restart this Claude Code session via the manager (manager types `/exit`, then re-execs with `--continue` so conversation context survives). Use after editing CLAUDE.md, MCP config, or skills. |
+| `/sync-inbox` | After `/restart`, catch up on inbound tubemail events that arrived during the restart window (the SSE subscription was briefly down and doesn't replay). |
+| `/reconnect-mcp` | Reconnect a failed MCP server on this worker without manually driving `/mcp`. Picks the right tool (`tm_self_reconnect_mcp` for any non-tubemail server, `mcp__tubemail-channel__reconnect_mcp` if tubemail itself is down). |
+
+If you maintain a `CLAUDE.md` for your project, point workers at these
+commands explicitly so the LLM knows when to reach for them. A minimal
+snippet:
+
+```markdown
+## TubeMail worker conventions
+
+- An MCP server shows ✘ failed (or its tools vanish): run `/reconnect-mcp`.
+- After editing CLAUDE.md, MCP config, or installing new skills: `/restart`,
+  then `/sync-inbox`.
+- Never drive the `/mcp` dialog manually with screenshot+keystroke chains —
+  use `/reconnect-mcp`, which is deterministic and survives the
+  Remote-Control-view trap.
+```
+
 ## Notifications the LLM should watch for
 
 The channel plugin pushes events to the LLM via `notifications/claude/channel`.
