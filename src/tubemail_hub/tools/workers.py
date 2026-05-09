@@ -27,50 +27,109 @@ logger = logging.getLogger(__name__)
 # like /python-coder, /investigate — goes through tubemail to the model.
 HARNESS_COMMANDS = {
     # Session management
-    "/exit", "/quit", "/clear", "/reset", "/new",
-    "/resume", "/continue", "/branch", "/fork", "/rename",
+    "/exit",
+    "/quit",
+    "/clear",
+    "/reset",
+    "/new",
+    "/resume",
+    "/continue",
+    "/branch",
+    "/fork",
+    "/rename",
     "/compact",
     # Configuration
-    "/config", "/settings", "/model", "/effort", "/fast",
-    "/theme", "/color", "/keybindings", "/permissions",
-    "/allowed-tools", "/plan",
+    "/config",
+    "/settings",
+    "/model",
+    "/effort",
+    "/fast",
+    "/theme",
+    "/color",
+    "/keybindings",
+    "/permissions",
+    "/allowed-tools",
+    "/plan",
     # Code & file
-    "/diff", "/rewind", "/checkpoint", "/copy", "/export",
+    "/diff",
+    "/rewind",
+    "/checkpoint",
+    "/copy",
+    "/export",
     "/add-dir",
     # Debugging & diagnostics
-    "/debug", "/doctor", "/hooks", "/context", "/cost",
-    "/usage", "/status", "/stats", "/insights",
+    "/debug",
+    "/doctor",
+    "/hooks",
+    "/context",
+    "/cost",
+    "/usage",
+    "/status",
+    "/stats",
+    "/insights",
     # IDE & environment
-    "/ide", "/desktop", "/app", "/terminal-setup",
-    "/statusline", "/sandbox",
+    "/ide",
+    "/desktop",
+    "/app",
+    "/terminal-setup",
+    "/statusline",
+    "/sandbox",
     # Account & auth
-    "/login", "/logout", "/upgrade", "/extra-usage",
-    "/passes", "/privacy-settings",
+    "/login",
+    "/logout",
+    "/upgrade",
+    "/extra-usage",
+    "/passes",
+    "/privacy-settings",
     # Web & remote
-    "/remote-control", "/rc", "/teleport", "/tp",
-    "/autofix-pr", "/remote-env",
+    "/remote-control",
+    "/rc",
+    "/teleport",
+    "/tp",
+    "/autofix-pr",
+    "/remote-env",
     # MCP & integrations
-    "/mcp", "/chrome", "/install-github-app", "/install-slack-app",
+    "/mcp",
+    "/chrome",
+    "/install-github-app",
+    "/install-slack-app",
     # Cloud platforms
-    "/setup-bedrock", "/setup-vertex",
+    "/setup-bedrock",
+    "/setup-vertex",
     # Memory & agents
-    "/memory", "/agents", "/init",
+    "/memory",
+    "/agents",
+    "/init",
     # Misc
-    "/help", "/verbose", "/btw", "/tasks", "/bashes",
-    "/release-notes", "/powerup", "/reload-plugins",
-    "/team-onboarding", "/plugin", "/voice",
-    "/stickers", "/mobile", "/ios", "/android", "/web-setup",
+    "/help",
+    "/verbose",
+    "/btw",
+    "/tasks",
+    "/bashes",
+    "/release-notes",
+    "/powerup",
+    "/reload-plugins",
+    "/team-onboarding",
+    "/plugin",
+    "/voice",
+    "/stickers",
+    "/mobile",
+    "/ios",
+    "/android",
+    "/web-setup",
 }
 
 
 def _is_harness_command(message: str) -> bool:
-    """True if the message is a built-in harness command that needs pty routing."""
+    """True if the message is a built-in harness command that needs pty
+    routing."""
     first_word = message.strip().split()[0] if message.strip() else ""
     return first_word in HARNESS_COMMANDS
 
 
 def register(mcp, engine: BridgeEngine) -> None:
-    """Register worker-orchestration tools + meta-tools on the given FastMCP."""
+    """Register worker-orchestration tools + meta-tools on the given
+    FastMCP."""
 
     # TODO(v0.2): make the project list configurable via env var.
     # Every ecosystem project always appears, even if no worker is running.
@@ -148,8 +207,12 @@ def register(mcp, engine: BridgeEngine) -> None:
             mgr_up = manager_online.get(w["name"])
             mgr = "mgr:🟢" if mgr_up else ("mgr:🔴" if mgr_up is not None else "mgr:--")
             version = manager_version.get(w["name"], "") or "—"
-            pending = f" ⚠️{w['pending_count']} pending" if w.get("pending_count") else ""
-            cwd = w.get("cwd", "").replace("/home/jesper/PycharmProjects/ai-agents/", "")
+            pending = (
+                f" ⚠️{w['pending_count']} pending" if w.get("pending_count") else ""
+            )
+            cwd = w.get("cwd", "").replace(
+                "/home/jesper/PycharmProjects/ai-agents/", ""
+            )
             name_w = max(10, 25 - len(indent))
             return (
                 f"{indent}{status} {w['name']:<{name_w}} {mgr:<7} "
@@ -161,8 +224,7 @@ def register(mcp, engine: BridgeEngine) -> None:
             workers = sorted(by_project[proj], key=lambda x: x["name"])
             if not workers:
                 lines.append(
-                    f"🔴 {proj:<25} {'mgr:--':<7} {'—':<22} "
-                    f"{'not started':<20}"
+                    f"🔴 {proj:<25} {'mgr:--':<7} {'—':<22} " f"{'not started':<20}"
                 )
             elif len(workers) == 1:
                 lines.append(_fmt_row(workers[0]))
@@ -298,9 +360,9 @@ def register(mcp, engine: BridgeEngine) -> None:
         briefly down.
 
         Returns `{worker, events}` where events follow the same shape as
-        tm_receive (inbound, outbound, permission_request, permission_response,
-        interrupt). Compare inbound events against your conversation
-        context to decide what you already acted on.
+        tm_receive (inbound, outbound, permission_request,
+        permission_response, interrupt). Compare inbound events against
+        your conversation context to decide what you already acted on.
 
         Returns `{error}` if TM_WORKER_NAME is unset — this tool only
         works inside a claude-tm-launched session.
@@ -340,7 +402,9 @@ def register(mcp, engine: BridgeEngine) -> None:
         pass `timeout_s > 60` without hitting Claude Code's MCP-call
         timeout. Returns an empty list on timeout (not an error).
         """
-        events = await engine.wait_for_activity(worker, since=since, timeout_s=timeout_s)
+        events = await engine.wait_for_activity(
+            worker, since=since, timeout_s=timeout_s
+        )
         return [
             {
                 "event_id": e.event_id,
@@ -354,7 +418,8 @@ def register(mcp, engine: BridgeEngine) -> None:
 
     @mcp.tool
     def tm_pending_permissions(worker: str | None = None) -> list[dict[str, Any]]:
-        """List all pending tool-approval prompts across workers (or one worker).
+        """List all pending tool-approval prompts across workers (or one
+        worker).
 
         When a worker's Claude Code session wants to use a tool that requires
         approval (Bash, Edit, etc.), the prompt is forwarded here via Claude
@@ -439,8 +504,8 @@ def register(mcp, engine: BridgeEngine) -> None:
 
     @mcp.tool
     async def tm_purge_worker(worker: str) -> dict[str, Any]:
-        """Permanently remove a worker from the registry — both the
-        in-memory state and the on-disk file under
+        """Permanently remove a worker from the registry — both the in-memory
+        state and the on-disk file under
         `/data/tubemail/workers/<worker>.json`.
 
         Use this to drop stale entries left behind by Claude sessions
@@ -510,10 +575,9 @@ def register(mcp, engine: BridgeEngine) -> None:
         }
 
     @mcp.tool
-    async def tm_update_manager(
-        worker: str, force: bool = False
-    ) -> dict[str, Any]:
-        """Re-exec a worker's tubemail.manager Python process to pick up updated source.
+    async def tm_update_manager(worker: str, force: bool = False) -> dict[str, Any]:
+        """Re-exec a worker's tubemail.manager Python process to pick up
+        updated source.
 
         Use after shipping a change to the tubemail channel code (e.g.
         new manager features) when you don't want to walk to the worker's
@@ -565,7 +629,8 @@ def register(mcp, engine: BridgeEngine) -> None:
     async def tm_clear_and_send(
         worker: str, message: str, delay_s: float = 1.5
     ) -> dict[str, Any]:
-        """Atomically /clear the worker's conversation, then dispatch a new task.
+        """Atomically /clear the worker's conversation, then dispatch a new
+        task.
 
         Use when starting an unrelated work order and you want a fresh
         context — prevents prior-turn reasoning bias and context rot.
@@ -595,10 +660,9 @@ def register(mcp, engine: BridgeEngine) -> None:
                 "pending_count": len(ws.pending_permissions) if ws else 0,
             }
         manager = f"{worker}-manager"
-        clear_event = await engine.enqueue_inbound(
-            manager, "/clear", {"kind": "clear"}
-        )
+        clear_event = await engine.enqueue_inbound(manager, "/clear", {"kind": "clear"})
         import asyncio as _asyncio
+
         await _asyncio.sleep(max(0.0, delay_s))
         msg_event = await engine.enqueue_inbound(worker, message, {})
         return {
@@ -610,7 +674,8 @@ def register(mcp, engine: BridgeEngine) -> None:
 
     @mcp.tool(task=True)
     async def tm_reconnect_mcp(worker: str, server: str) -> dict[str, Any]:
-        """Reconnect a failed MCP server on a worker without manual dialog driving.
+        """Reconnect a failed MCP server on a worker without manual dialog
+        driving.
 
         The worker's manager drives the /mcp dialog deterministically:
         open dialog → navigate to the named server → select Reconnect.
@@ -639,20 +704,77 @@ def register(mcp, engine: BridgeEngine) -> None:
         # so we'd return the timeout error even when the manager
         # eventually posts a successful reconnect_mcp_result.
         inbound = await engine.enqueue_inbound(
-            manager, f"reconnect_mcp:{server}",
+            manager,
+            f"reconnect_mcp:{server}",
             {"kind": f"reconnect_mcp:{server}"},
         )
         result_event = await engine.wait_for_matching_event(
             manager,
             since=inbound.event_id,
             match=lambda e: (
-                e.kind == "outbound"
-                and e.meta.get("kind") == "reconnect_mcp_result"
+                e.kind == "outbound" and e.meta.get("kind") == "reconnect_mcp_result"
             ),
             timeout_s=30.0,
         )
         if result_event is not None:
             import json
+
+            try:
+                return json.loads(result_event.content)
+            except (json.JSONDecodeError, ValueError):
+                return {"raw": result_event.content}
+        return {
+            "error": "manager did not post a reconnect_mcp_result within 30s",
+            "detail": "worker may be unresponsive; try tm_screenshot to inspect",
+        }
+
+    @mcp.tool(task=True)
+    async def tm_self_reconnect_mcp(server: str) -> dict[str, Any]:
+        """Reconnect a failed MCP server on THIS worker.
+
+        Convenience wrapper around `tm_reconnect_mcp` for self-reconnect:
+        the worker name is resolved from the `TM_WORKER_NAME` env var set
+        by the claude-tm wrapper, so the LLM does not have to thread its
+        own identity through the call.
+
+        Use this any time a `mcp__<server>__*` tool starts returning
+        "server disconnected" or vanishes from the available tool list,
+        AND the tubemail MCP itself is still reachable. If tubemail is
+        the failed server, this tool is unreachable too — use the
+        channel-side `mcp__tubemail-channel__reconnect_mcp(server)` tool
+        instead, which talks to the local manager via a Unix socket and
+        bypasses the hub.
+
+        Returns `{ok, server, detail}` (same shape as tm_reconnect_mcp)
+        or `{error}` if `TM_WORKER_NAME` is unset (this tool only works
+        from inside a claude-tm-launched session).
+        """
+        worker = os.environ.get("TM_WORKER_NAME", "").strip()
+        if not worker:
+            return {
+                "error": (
+                    "TM_WORKER_NAME not set — tm_self_reconnect_mcp only works "
+                    "from inside a claude-tm session. Use tm_reconnect_mcp"
+                    "(worker, server) explicitly instead."
+                ),
+            }
+        manager = f"{worker}-manager"
+        inbound = await engine.enqueue_inbound(
+            manager,
+            f"reconnect_mcp:{server}",
+            {"kind": f"reconnect_mcp:{server}"},
+        )
+        result_event = await engine.wait_for_matching_event(
+            manager,
+            since=inbound.event_id,
+            match=lambda e: (
+                e.kind == "outbound" and e.meta.get("kind") == "reconnect_mcp_result"
+            ),
+            timeout_s=30.0,
+        )
+        if result_event is not None:
+            import json
+
             try:
                 return json.loads(result_event.content)
             except (json.JSONDecodeError, ValueError):
@@ -685,13 +807,13 @@ def register(mcp, engine: BridgeEngine) -> None:
             manager,
             since=inbound.event_id,
             match=lambda e: (
-                e.kind == "outbound"
-                and e.meta.get("kind") == "health_response"
+                e.kind == "outbound" and e.meta.get("kind") == "health_response"
             ),
             timeout_s=5.0,
         )
         if result_event is not None:
             import json
+
             try:
                 return json.loads(result_event.content)
             except (json.JSONDecodeError, ValueError):
@@ -701,9 +823,7 @@ def register(mcp, engine: BridgeEngine) -> None:
     # ── Recording tools ──────────────────────────────────────────────────
 
     @mcp.tool
-    async def tm_recording_toggle(
-        worker: str, enabled: bool
-    ) -> dict[str, Any]:
+    async def tm_recording_toggle(worker: str, enabled: bool) -> dict[str, Any]:
         """Turn pty-output recording on or off for a single worker.
 
         When on, every byte the worker's manager emits is teed to two files
@@ -720,9 +840,16 @@ def register(mcp, engine: BridgeEngine) -> None:
             return {"ok": False, "error": f"unknown worker: {worker!r}"}
         ok = await engine.set_recording_enabled(worker, enabled)
         rec = engine.recorder
-        status = rec.status(worker) if rec is not None else {
-            "worker": worker, "enabled": enabled, "active_file": None, "files": [],
-        }
+        status = (
+            rec.status(worker)
+            if rec is not None
+            else {
+                "worker": worker,
+                "enabled": enabled,
+                "active_file": None,
+                "files": [],
+            }
+        )
         return {"ok": ok, **status}
 
     @mcp.tool
@@ -780,7 +907,11 @@ def register(mcp, engine: BridgeEngine) -> None:
                 "error": "recorder not configured on this hub",
             }
         frames = rec.read_frames(
-            worker, since=since, until=until, grep=grep, limit=limit + 1,
+            worker,
+            since=since,
+            until=until,
+            grep=grep,
+            limit=limit + 1,
         )
         truncated = len(frames) > limit
         if truncated:
@@ -809,8 +940,7 @@ def register(mcp, engine: BridgeEngine) -> None:
             manager,
             since=inbound.event_id,
             match=lambda e: (
-                e.kind == "outbound"
-                and e.meta.get("kind") == "screenshot"
+                e.kind == "outbound" and e.meta.get("kind") == "screenshot"
             ),
             timeout_s=5.0,
         )
@@ -825,13 +955,16 @@ def register(mcp, engine: BridgeEngine) -> None:
         """Return TubeMail's server usage instructions, recommended workflows,
         and domain concepts.
 
-        Call this to re-read the instructions at any time — especially after
-        context compaction or when unsure how to use the server's tools."""
+        Call this to re-read the instructions at any time — especially
+        after context compaction or when unsure how to use the server's
+        tools.
+        """
         from tubemail_hub.server import SERVER_INSTRUCTIONS
 
         return SERVER_INSTRUCTIONS
 
     from tubemail_hub.refresh import register_refresh_tool
+
     register_refresh_tool(mcp)
 
 
