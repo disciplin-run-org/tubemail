@@ -57,9 +57,22 @@ _INSTRUCTIONS = SERVER_INSTRUCTIONS
 
 
 def _version() -> str:
-    version_file = Path(__file__).parents[2] / "VERSION"
-    if version_file.exists():
-        return version_file.read_text().strip()
+    """Read the VERSION file. Same candidate-path strategy as the SPA
+    dist resolver — parents[2] only reaches the file when source lives
+    at /app/src/tubemail_hub/...; in monorepo dev mode source is bind-
+    mounted into site-packages and parents[2] no longer points at /app,
+    so fall back to /app/VERSION (baked by the Dockerfile) and finally
+    a TUBEMAIL_VERSION env override for ad-hoc operator use.
+    """
+    candidates = []
+    env_override = os.environ.get("TUBEMAIL_VERSION", "").strip()
+    if env_override:
+        return env_override
+    candidates.append(Path(__file__).parents[2] / "VERSION")
+    candidates.append(Path("/app/VERSION"))
+    for p in candidates:
+        if p.exists():
+            return p.read_text().strip()
     return "dev"
 
 
