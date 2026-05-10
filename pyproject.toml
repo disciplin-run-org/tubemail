@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tubemail-hub"
-version = "0.10.0"
+version = "0.11.0"
 description = "Orchestration hub routing work between Claude Code sessions via tubemail channel plugin"
 requires-python = ">=3.10"
 dependencies = [
