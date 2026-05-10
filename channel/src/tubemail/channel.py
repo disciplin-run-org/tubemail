@@ -19,6 +19,11 @@ from .hub_client import HubClient
 from .jsonrpc import JsonRpcError, JsonRpcStdio
 from .local_ipc import SOCK_ENV, LocalIPCError
 from .local_ipc import request as local_ipc_request
+from .permission_durability import (
+    PermissionResponseSpool,
+    drain_spool,
+    post_permission_response_durable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,7 @@ class Channel:
         *,
         rpc: JsonRpcStdio | None = None,
         pending_buffer: Any = None,
+        permission_spool: PermissionResponseSpool | None = None,
     ):
         self._hub = hub
         self._worker = worker_name
@@ -54,6 +60,15 @@ class Channel:
         self._initialized = asyncio.Event()
         self._stream_task: asyncio.Task | None = None
         self._pending_buffer = pending_buffer  # PendingBuffer | None
+        # Per-worker permission_response spool. Without durability here, a
+        # hub blip at the moment a permission gets resolved locally leaks
+        # state — the LLM proceeds, but the hub stays stuck on
+        # waiting_permission until the worker re-registers. The spool
+        # writes failed POSTs to disk and drains on the next success or
+        # at channel startup.
+        self._permission_spool = permission_spool or PermissionResponseSpool(
+            worker_name,
+        )
         # Wire the hub's threshold-tripped health notifier through to the
         # LLM as a `notifications/claude/channel` event. The hub fires this
         # exactly once per outage (see UNHEALTHY_NOTIFY_THRESHOLD); the
@@ -123,6 +138,14 @@ class Channel:
                 }
             )
         # end try
+        # Drain any permission_response payloads that were spooled by a
+        # previous channel process when the hub was unreachable. Best-
+        # effort — if the hub is still down, drain_spool stops on the
+        # first failure and the entries stay on disk for the next try.
+        try:
+            await drain_spool(self._hub, self._permission_spool)
+        except Exception:
+            logger.exception("permission spool drain at init failed")
         self._initialized.set()
         self._stream_task = asyncio.create_task(self._pump_hub_events())
 
@@ -358,23 +381,29 @@ class Channel:
                     logger.exception("approval exchange offer_request failed")
                     matched = False
                 if matched:
-                    try:
-                        await self._hub.post_permission_response(
-                            request_id=request_id, behavior="allow"
-                        )
-                    except Exception:
-                        logger.exception("auto-resolve after matched approval failed")
+                    # Use the durable wrapper so a hub blip during
+                    # auto-approve doesn't leak the same way as a
+                    # user-driven resolution would. Spools on final
+                    # failure; the next channel startup or successful
+                    # POST drains it.
+                    await post_permission_response_durable(
+                        self._hub,
+                        self._permission_spool,
+                        request_id,
+                        "allow",
+                    )
 
         elif method == "notifications/claude/channel/permission":
-            # Local resolution — user approved/denied at the terminal or via hook.
-            # Forward to hub so TubeMail learns what was approved.
-            try:
-                await self._hub.post_permission_response(
-                    request_id=params.get("request_id", ""),
-                    behavior=params.get("behavior", "allow"),
-                )
-            except Exception:
-                logger.exception("forwarding permission_response failed")
+            # Local resolution — user approved/denied at the terminal or
+            # via hook. Forward to hub via the durable wrapper so a
+            # transient hub blip at the moment of resolution doesn't
+            # leave the hub stuck on `waiting_permission` forever.
+            await post_permission_response_durable(
+                self._hub,
+                self._permission_spool,
+                params.get("request_id", ""),
+                params.get("behavior", "allow"),
+            )
 
         else:
             logger.debug("unhandled notification: %s", method)
