@@ -451,6 +451,38 @@ def register(mcp, engine: BridgeEngine) -> None:
         return {"ok": ok}
 
     @mcp.tool
+    async def tm_sweep_stale_permissions(
+        worker: str | None = None,
+    ) -> dict[str, Any]:
+        """Drop pending_permission entries that the event timeline proves
+        were resolved.
+
+        Without this, a hub blip at the moment a permission gets answered
+        locally leaves the entry stuck on the hub — the LLM proceeds, the
+        worker keeps producing outbound events, but `tm_status` keeps
+        reporting `state="waiting_permission"` forever. The sweeper drops
+        any pending entry where a worker outbound event (Stop relay, ack,
+        explicit reply) was recorded strictly after the request's ts.
+
+        Pass `worker` to sweep one specific worker, or omit to sweep every
+        known worker. Returns `{swept: {<worker>: <count>}, total: <int>}`
+        — only workers where at least one entry was dropped appear in
+        `swept`. The hub also runs the sweeper at startup, so a routine
+        restart heals stuck entries automatically.
+        """
+        if worker is not None:
+            n = await engine.sweep_stale_permissions(worker)
+            return {
+                "swept": {worker: n} if n else {},
+                "total": n,
+            }
+        results = await engine.sweep_stale_permissions_all()
+        return {
+            "swept": results,
+            "total": sum(results.values()),
+        }
+
+    @mcp.tool
     async def tm_interrupt(worker: str) -> dict[str, Any]:
         """Send an interrupt event to a worker.
 

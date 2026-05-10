@@ -78,6 +78,12 @@ class BridgeEngine:
         self._global_subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._lock = asyncio.Lock()
         self._load_all()
+        # Drop pending_permission entries that disk says are pending but
+        # subsequent worker outbound activity proves were resolved. Without
+        # this, a hub blip at the moment a permission was answered locally
+        # leaves the entry pending forever — see _sweep_stale_for_worker
+        # for the proven-stuck heuristic.
+        self._sweep_stale_permissions_on_load()
 
     # ── persistence ──────────────────────────────────────────────────────────
 
@@ -130,6 +136,132 @@ class BridgeEngine:
                 logging.getLogger(__name__).warning(
                     "_load_all: failed to parse %s: %s", path.name, e
                 )
+
+    # Worker outbound event kinds that prove the LLM's session resumed
+    # past a permission gate. If any of these were posted strictly AFTER
+    # a permission_request's timestamp, the request was answered locally
+    # — the channel just failed to forward the resolution to the hub.
+    # Anything in the worker's own `outbound` (Stop hook relay, ack tool,
+    # explicit reply, the channel's own permission_response posting that
+    # DID make it through) qualifies; an `interrupt` does not, because
+    # an interrupt is what gets sent TO the worker to break it out of a
+    # gate, not proof of progress past one.
+    _PROOF_OF_RESUMED_KINDS = frozenset({"outbound", "permission_response"})
+
+    # Brand-new permission requests need a grace window before the
+    # sweeper considers them "stuck" — otherwise a request received
+    # microseconds before a stop_relay outbound could be wrongly evicted.
+    # 60s is conservative; permission prompts that genuinely need an
+    # answer sit pending for many minutes.
+    _SWEEP_GRACE_S = 60.0
+
+    def _sweep_stale_for_worker(self, name: str, *, now: float | None = None) -> int:
+        """Drop pending_permission entries on `name` that the event timeline
+        proves were resolved. Returns the number of entries dropped.
+
+        For each pending entry, find its corresponding `permission_request`
+        event in `ws.events`. If any worker outbound event with a kind in
+        :attr:`_PROOF_OF_RESUMED_KINDS` was recorded after that ts, the
+        permission must have been answered locally (the LLM cannot have
+        produced subsequent output while still blocked on a permission
+        prompt). Drop the pending entry and persist.
+
+        Entries with no matching event in the timeline are left alone if
+        they are within the grace window since `last_activity`; they may
+        be brand-new requests whose event hasn't been appended yet from a
+        racing call. Older orphans are dropped — they cannot be resolved
+        because the worker's event log no longer references them.
+
+        Caller must hold the engine lock OR be running before any async
+        access (e.g. inside :meth:`__init__`).
+        """
+        ws = self._workers.get(name)
+        if ws is None or not ws.pending_permissions:
+            return 0
+        now = now if now is not None else time.time()
+        # Index permission_request events by request_id once so the
+        # per-pending lookup is O(1) instead of O(n*m).
+        request_ts: dict[str, float] = {}
+        for ev in ws.events:
+            if ev.kind == "permission_request":
+                rid = ev.meta.get("request_id")
+                if isinstance(rid, str) and rid:
+                    request_ts[rid] = ev.ts
+        # Pre-compute outbound timestamps once. We only need the LATEST
+        # qualifying outbound — anything earlier than that can't help.
+        latest_proof_ts = 0.0
+        for ev in ws.events:
+            if ev.kind in self._PROOF_OF_RESUMED_KINDS and ev.ts > latest_proof_ts:
+                latest_proof_ts = ev.ts
+        kept: list[Any] = []
+        dropped = 0
+        for p in ws.pending_permissions:
+            req_ts = request_ts.get(p.request_id)
+            if req_ts is None:
+                # Orphan: no matching permission_request in events. Could
+                # be brand-new (event append racing) or genuinely lost.
+                # Use last_activity as the floor — if the worker has been
+                # quiet for the grace window, the orphan is stale.
+                age = now - ws.last_activity if ws.last_activity else 0.0
+                if age > self._SWEEP_GRACE_S:
+                    dropped += 1
+                    continue
+                kept.append(p)
+                continue
+            if latest_proof_ts > req_ts and (now - req_ts) > self._SWEEP_GRACE_S:
+                dropped += 1
+                continue
+            kept.append(p)
+        if dropped:
+            ws.pending_permissions = kept
+            self._persist(name)
+            logging.getLogger(__name__).info(
+                "sweep_stale_permissions: dropped %d proven-resolved "
+                "pending_permissions on worker %s", dropped, name,
+            )
+        return dropped
+
+    def _sweep_stale_permissions_on_load(self) -> None:
+        """Run the sweeper across every loaded worker at hub startup.
+
+        Sync because :meth:`__init__` is sync and no other coroutine can
+        be touching the engine yet — the lock isn't needed and acquiring
+        it from sync code would deadlock if it existed in this state. A
+        runtime caller should use :meth:`sweep_stale_permissions` /
+        :meth:`sweep_stale_permissions_all` instead.
+        """
+        for name in list(self._workers.keys()):
+            try:
+                self._sweep_stale_for_worker(name)
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "sweep_stale_permissions_on_load: worker %s raised %s",
+                    name, e,
+                )
+
+    async def sweep_stale_permissions(self, name: str) -> int:
+        """Async wrapper for runtime callers (e.g. admin tool)."""
+        async with self._lock:
+            return self._sweep_stale_for_worker(name)
+
+    async def sweep_stale_permissions_all(self) -> dict[str, int]:
+        """Sweep every known worker. Returns ``{worker: dropped_count}``
+        for workers where at least one entry was dropped (clean workers
+        are omitted to keep the response readable)."""
+        async with self._lock:
+            results: dict[str, int] = {}
+            for name in list(self._workers.keys()):
+                try:
+                    n = self._sweep_stale_for_worker(name)
+                except Exception as e:
+                    logging.getLogger(__name__).warning(
+                        "sweep_stale_permissions_all: worker %s raised %s",
+                        name, e,
+                    )
+                    continue
+                if n:
+                    results[name] = n
+            return results
 
     def _persist(self, name: str) -> None:
         ws = self._workers.get(name)

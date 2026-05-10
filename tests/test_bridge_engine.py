@@ -685,3 +685,152 @@ async def test_re_register_keeps_same_recording_session(tmp_path: Path):
     rec.write("w", b"second session\n")
     files_after = rec.list_files("w")
     assert len(files_after) == 1
+
+
+# ── sweep_stale_permissions ─────────────────────────────────────────────
+
+
+async def test_sweep_drops_proven_resolved_pending(engine: BridgeEngine):
+    """A pending permission whose request_event is followed by a worker
+    outbound event must be dropped — the LLM cannot have produced output
+    while still blocked on a permission gate, so the resolution clearly
+    happened locally and just failed to reach the hub."""
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="stuck1", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    # Backdate the request so the grace window doesn't protect it.
+    ws = engine._workers["w"]
+    for ev in ws.events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600  # 1h ago
+    # Worker keeps replying — proves the gate was answered locally.
+    await engine.record_outbound("w", "i continued past the gate")
+    assert len(ws.pending_permissions) == 1
+
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 1
+    assert ws.pending_permissions == []
+
+
+async def test_sweep_keeps_genuinely_pending(engine: BridgeEngine):
+    """If no worker outbound event exists after the request, the pending
+    entry is still real — the worker IS blocked. Don't drop it."""
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="real", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    ws = engine._workers["w"]
+    for ev in ws.events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600
+    # No outbound after the request — worker is still waiting.
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 0
+    assert len(ws.pending_permissions) == 1
+
+
+async def test_sweep_respects_grace_window(engine: BridgeEngine):
+    """A request from less than _SWEEP_GRACE_S ago must be kept even
+    when an outbound has landed since — the timing is too close to call
+    safely (could be a race between a request append and a stop_relay).
+    """
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="fresh", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    await engine.record_outbound("w", "racing reply")
+    # No backdating — request ts is current, well within grace window.
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 0
+    assert len(engine._workers["w"].pending_permissions) == 1
+
+
+async def test_sweep_drops_orphan_after_grace(engine: BridgeEngine):
+    """A pending entry whose permission_request event is missing from
+    the timeline (state corruption, or an old entry whose event has
+    aged out) gets dropped once the worker has been quiet for the
+    grace window. Otherwise the entry is unanswerable forever."""
+    await engine.register_worker("w", "/")
+    ws = engine._workers["w"]
+    # Inject a pending entry directly with no matching event in `events`.
+    ws.pending_permissions.append(
+        PermissionRequestPayload(request_id="orphan", tool_name="Bash"),
+    )
+    # Backdate last_activity past the grace window.
+    ws.last_activity = ws.last_activity - 3600
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 1
+    assert ws.pending_permissions == []
+
+
+async def test_sweep_keeps_orphan_within_grace(engine: BridgeEngine):
+    """A brand-new orphan (request_event hasn't been appended yet, or
+    last_activity is fresh) is kept — could be a race, not a stuck
+    entry. Dropping it would race with legitimate registrations."""
+    await engine.register_worker("w", "/")
+    ws = engine._workers["w"]
+    ws.pending_permissions.append(
+        PermissionRequestPayload(request_id="new", tool_name="Bash"),
+    )
+    # last_activity is `now` from register_worker — well within grace.
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 0
+    assert len(ws.pending_permissions) == 1
+
+
+async def test_sweep_all_only_reports_workers_that_changed(engine: BridgeEngine):
+    """The aggregated sweeper returns only workers where it actually
+    dropped something — clean workers are omitted to keep the response
+    readable when scanning a large fleet."""
+    await engine.register_worker("clean", "/")
+    await engine.register_worker("stuck", "/")
+    payload = PermissionRequestPayload(request_id="x", tool_name="Bash")
+    await engine.record_permission_request("stuck", payload)
+    for ev in engine._workers["stuck"].events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600
+    await engine.record_outbound("stuck", "moved on")
+
+    results = await engine.sweep_stale_permissions_all()
+    assert results == {"stuck": 1}
+    # Verify clean worker was actually scanned, just not reported.
+    assert engine._workers["clean"].pending_permissions == []
+
+
+async def test_sweeper_runs_at_engine_construction(tmp_path: Path):
+    """When the hub starts, _load_all reads workers from disk; the
+    sweeper must immediately drop proven-stuck entries so the very first
+    tm_status / tm_pending_permissions response is already clean. Without
+    this, the hub's startup window leaks the same stale state until
+    something else triggers cleanup."""
+    import json
+    import time as _time
+    # Hand-craft a worker file with a stuck pending permission and a
+    # subsequent outbound — the exact shape of the leanspecs-code-tm bug.
+    workers_dir = tmp_path / "workers"
+    workers_dir.mkdir()
+    request_ts = _time.time() - 3600
+    outbound_ts = request_ts + 60
+    state = {
+        "name": "stuck-worker",
+        "registered_at": request_ts - 100,
+        "last_activity": outbound_ts,
+        "pending_permissions": [
+            {"request_id": "ghost", "tool_name": "Bash"},
+        ],
+        "events": [
+            {
+                "event_id": "ev1", "ts": request_ts, "kind": "permission_request",
+                "content": "Bash", "meta": {"request_id": "ghost"},
+            },
+            {
+                "event_id": "ev2", "ts": outbound_ts, "kind": "outbound",
+                "content": "moved on", "meta": {},
+            },
+        ],
+    }
+    (workers_dir / "stuck-worker.json").write_text(json.dumps(state))
+
+    fresh_engine = BridgeEngine(data_dir=tmp_path)
+    assert fresh_engine._workers["stuck-worker"].pending_permissions == []
+    # And the cleanup persisted to disk, not just to memory.
+    on_disk = json.loads((workers_dir / "stuck-worker.json").read_text())
+    assert on_disk["pending_permissions"] == []

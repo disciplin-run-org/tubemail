@@ -351,6 +351,49 @@ async def test_self_reconnect_mcp_errors_when_env_missing(
     assert "TM_WORKER_NAME" in data["error"]
 
 
+async def test_sweep_stale_permissions_tool_reports_dropped_workers(
+    mcp_and_engine,
+):
+    """The admin tool surfaces only workers where something was dropped,
+    plus a `total` count. A clean fleet returns swept={}, total=0."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("clean-tm", "/")
+    await engine.register_worker("stuck-tm", "/")
+    await engine.record_permission_request(
+        "stuck-tm", PermissionRequestPayload(request_id="x", tool_name="Bash"),
+    )
+    for ev in engine._workers["stuck-tm"].events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600
+    await engine.record_outbound("stuck-tm", "moved on")
+
+    result = await _call(mcp, "tm_sweep_stale_permissions")
+    data = result.structured_content
+    assert data == {"swept": {"stuck-tm": 1}, "total": 1}
+
+
+async def test_sweep_stale_permissions_tool_scopes_to_one_worker(
+    mcp_and_engine,
+):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("a", "/")
+    await engine.register_worker("b", "/")
+    for w in ("a", "b"):
+        await engine.record_permission_request(
+            w, PermissionRequestPayload(request_id=f"{w}-x", tool_name="Bash"),
+        )
+        for ev in engine._workers[w].events:
+            if ev.kind == "permission_request":
+                ev.ts -= 3600
+        await engine.record_outbound(w, "moved on")
+
+    result = await _call(mcp, "tm_sweep_stale_permissions", worker="a")
+    data = result.structured_content
+    assert data == {"swept": {"a": 1}, "total": 1}
+    # b was untouched.
+    assert len(engine._workers["b"].pending_permissions) == 1
+
+
 async def test_self_reconnect_mcp_routes_to_caller_manager(
     mcp_and_engine,
     monkeypatch,
