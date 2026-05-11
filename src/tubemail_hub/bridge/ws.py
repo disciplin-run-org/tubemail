@@ -24,6 +24,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
@@ -36,23 +37,59 @@ logger = logging.getLogger(__name__)
 
 
 def _default_allowed_origins() -> set[str]:
-    """Local dev defaults. Override in prod via TUBEMAIL_ALLOWED_ORIGINS
+    """Cross-origin allowlist. Override via TUBEMAIL_ALLOWED_ORIGINS
     (comma-separated), e.g. 'https://tubemail.example.com'.
 
-    An empty / unset value means only localhost on port 8004 (both HTTP
-    and HTTPS) is accepted — the safest default for a fresh install.
+    Same-origin WS upgrades (the typical case — the SPA served by this
+    hub opens a WS back to it) are always accepted via `_is_same_origin`
+    regardless of this set, so operators reaching the hub on a LAN IP,
+    Tailscale hostname, or reverse-proxied domain do NOT need to add
+    that address here. This list only matters for genuinely cross-origin
+    callers — e.g. the vite dev server on :5173 hitting the hub on :8004.
     """
     raw = os.environ.get("TUBEMAIL_ALLOWED_ORIGINS", "").strip()
     if raw:
         return {o.strip() for o in raw.split(",") if o.strip()}
     return {
-        "http://localhost:8004",
-        "https://localhost:8004",
-        "http://127.0.0.1:8004",
-        "https://127.0.0.1:8004",
         # vite dev server proxying the hub
         "http://localhost:5173",
     }
+
+
+def _is_same_origin(websocket: WebSocket, origin: str) -> bool:
+    """True iff the Origin header matches the WS request's own scheme+host.
+
+    Same-origin is the actual security property the allowlist is meant to
+    enforce: only the page served by THIS hub may open a WS back to it.
+    Computing self-origin from the request (Host + scheme) accepts any
+    address the operator reaches the hub on — localhost, LAN IP,
+    Tailscale (100.x / *.ts.net), reverse-proxied hostname — without
+    having to enumerate them in TUBEMAIL_ALLOWED_ORIGINS.
+
+    Honors X-Forwarded-Proto so a TLS-terminating proxy in front of a
+    plaintext hub still matches a browser Origin of https://... — the
+    common shape when serving the UI behind nginx/caddy/cloudflare.
+    """
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    host = websocket.headers.get("host", "")
+    if not host:
+        return False
+    fwd_proto = (
+        websocket.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    )
+    if fwd_proto in ("http", "https"):
+        expected_scheme = fwd_proto
+    else:
+        expected_scheme = "https" if websocket.url.scheme == "wss" else "http"
+    return (
+        parsed.scheme.lower() == expected_scheme
+        and parsed.netloc.lower() == host.lower()
+    )
 
 
 def _tls_required() -> bool:
@@ -77,10 +114,21 @@ def build_ws_router(
         ticket: str = Query(default=""),
     ):
         # 1. Origin allowlist (prevents a malicious page in another tab from
-        # hijacking a valid ticket).
+        # hijacking a valid ticket). Accept if (a) Origin matches the WS
+        # request's own scheme+host — i.e. same-origin, the normal case
+        # whether the user reached the hub on localhost, a LAN IP, or a
+        # Tailscale hostname — or (b) Origin is explicitly allowlisted
+        # via TUBEMAIL_ALLOWED_ORIGINS for cross-origin setups.
         origin = websocket.headers.get("origin")
-        if origin and origin not in allowed_origins:
-            logger.warning("ws_pty: rejected origin %r", origin)
+        if (
+            origin
+            and origin not in allowed_origins
+            and not _is_same_origin(websocket, origin)
+        ):
+            logger.warning(
+                "ws_pty: rejected origin %r (host=%r)",
+                origin, websocket.headers.get("host"),
+            )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
