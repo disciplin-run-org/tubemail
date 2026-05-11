@@ -155,7 +155,9 @@ class BridgeEngine:
     # answer sit pending for many minutes.
     _SWEEP_GRACE_S = 60.0
 
-    def _sweep_stale_for_worker(self, name: str, *, now: float | None = None) -> int:
+    def _sweep_stale_for_worker(
+        self, name: str, *, now: float | None = None, persist: bool = True
+    ) -> int:
         """Drop pending_permission entries on `name` that the event timeline
         proves were resolved. Returns the number of entries dropped.
 
@@ -171,6 +173,10 @@ class BridgeEngine:
         be brand-new requests whose event hasn't been appended yet from a
         racing call. Older orphans are dropped — they cannot be resolved
         because the worker's event log no longer references them.
+
+        `persist=False` skips the per-sweep disk write — used by callers
+        that are about to persist anyway (e.g. `record_outbound`) so the
+        worker file is written once, not twice, on the common case.
 
         Caller must hold the engine lock OR be running before any async
         access (e.g. inside :meth:`__init__`).
@@ -214,7 +220,8 @@ class BridgeEngine:
             kept.append(p)
         if dropped:
             ws.pending_permissions = kept
-            self._persist(name)
+            if persist:
+                self._persist(name)
             logging.getLogger(__name__).info(
                 "sweep_stale_permissions: dropped %d proven-resolved "
                 "pending_permissions on worker %s", dropped, name,
@@ -622,6 +629,18 @@ class BridgeEngine:
             )
             ws.events.append(event)
             ws.last_activity = event.ts
+            # Auto-sweep: this outbound is proof the LLM passed any prior
+            # permission gate. Drop proven-resolved pending entries now
+            # instead of waiting for the next admin call or hub restart.
+            # The grace window inside _sweep_stale_for_worker protects new
+            # requests from being evicted racing a parallel outbound.
+            # Why this matters: when a hook (e.g. auto-approve-safe.sh)
+            # short-circuits a permission locally and Claude Code runs the
+            # tool without round-tripping a `permission` notification, no
+            # permission_response ever reaches the hub — the entry would
+            # otherwise persist forever.
+            if ws.pending_permissions:
+                self._sweep_stale_for_worker(worker, now=event.ts, persist=False)
             self._persist(worker)
         # Global-only fan-out: the event originated from the forwarder (this
         # endpoint is called by its POST /outbound), so don't echo it back.

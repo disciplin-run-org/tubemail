@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from tubemail_hub.bridge.engine import BridgeEngine
-from tubemail_hub.bridge.models import PermissionRequestPayload
+from tubemail_hub.bridge.engine import BridgeEngine, _new_event_id
+from tubemail_hub.bridge.models import PermissionRequestPayload, WorkerEvent
 
 
 @pytest.fixture
@@ -703,8 +703,19 @@ async def test_sweep_drops_proven_resolved_pending(engine: BridgeEngine):
     for ev in ws.events:
         if ev.kind == "permission_request":
             ev.ts -= 3600  # 1h ago
-    # Worker keeps replying — proves the gate was answered locally.
-    await engine.record_outbound("w", "i continued past the gate")
+    # Worker keeps replying — append the outbound DIRECTLY to bypass the
+    # auto-sweep wired into record_outbound; this test pins the explicit
+    # sweep admin path. The auto-sweep is covered separately by
+    # test_outbound_auto_sweeps_proven_resolved_pending below.
+    import time as _t
+    ws.events.append(WorkerEvent(
+        event_id=_new_event_id(),
+        ts=_t.time(),
+        kind="outbound",
+        content="i continued past the gate",
+        meta={},
+    ))
+    ws.last_activity = ws.events[-1].ts
     assert len(ws.pending_permissions) == 1
 
     dropped = await engine.sweep_stale_permissions("w")
@@ -787,7 +798,19 @@ async def test_sweep_all_only_reports_workers_that_changed(engine: BridgeEngine)
     for ev in engine._workers["stuck"].events:
         if ev.kind == "permission_request":
             ev.ts -= 3600
-    await engine.record_outbound("stuck", "moved on")
+    # Append outbound directly so record_outbound's auto-sweep doesn't
+    # claim the drop before the admin call gets to count it. The
+    # auto-sweep behavior is pinned by its own dedicated test.
+    import time as _t
+    ws_stuck = engine._workers["stuck"]
+    ws_stuck.events.append(WorkerEvent(
+        event_id=_new_event_id(),
+        ts=_t.time(),
+        kind="outbound",
+        content="moved on",
+        meta={},
+    ))
+    ws_stuck.last_activity = ws_stuck.events[-1].ts
 
     results = await engine.sweep_stale_permissions_all()
     assert results == {"stuck": 1}
@@ -834,3 +857,93 @@ async def test_sweeper_runs_at_engine_construction(tmp_path: Path):
     # And the cleanup persisted to disk, not just to memory.
     on_disk = json.loads((workers_dir / "stuck-worker.json").read_text())
     assert on_disk["pending_permissions"] == []
+
+
+# ── Auto-sweep on outbound (class-boundary regression for QM #243-followup) ──
+#
+# Class of failure: a permission gets resolved locally (auto-approve hook,
+# user prompt, etc.) without the resolution reaching the hub — typically
+# because the local hook short-circuits Claude Code's permission flow and
+# no `permission` notification is ever emitted to the channel. The hub's
+# pending_permissions entry then sits forever until someone restarts the
+# hub or calls tm_sweep_stale_permissions.
+#
+# The fix wires the existing sweeper into `record_outbound`: any outbound
+# event is proof the LLM passed the prior permission gate, so any pending
+# entry that pre-dates the outbound by more than the grace window MUST be
+# dropped automatically. These tests pin that contract regardless of HOW
+# the resolution failed to round-trip.
+
+
+async def test_outbound_auto_sweeps_proven_resolved_pending(
+    engine: BridgeEngine,
+):
+    """Record an outbound that postdates a stuck request by more than
+    the grace window. Pending must clear with no admin call."""
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="stuck", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    ws = engine._workers["w"]
+    for ev in ws.events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600
+    assert len(ws.pending_permissions) == 1
+
+    await engine.record_outbound("w", "i moved on")
+
+    assert ws.pending_permissions == []
+
+
+async def test_outbound_auto_sweep_respects_grace_window(
+    engine: BridgeEngine,
+):
+    """An outbound emitted within the grace window of a fresh request
+    must NOT trigger eviction — could be a parallel reply racing a real
+    pending prompt. The grace window inside _sweep_stale_for_worker is
+    the safety net against false positives."""
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="real", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    # No backdating — request is current. record_outbound's auto-sweep
+    # should see the request inside the grace window and keep it.
+    await engine.record_outbound("w", "parallel reply")
+    assert len(engine._workers["w"].pending_permissions) == 1
+
+
+async def test_outbound_auto_sweep_no_op_when_no_pending(
+    engine: BridgeEngine,
+):
+    """When pending_permissions is empty, record_outbound must not pay
+    the cost of scanning the event timeline. Verified indirectly: the
+    method runs without error on a worker with no pending entries, and
+    leaves the new event in place."""
+    await engine.register_worker("w", "/")
+    await engine.record_outbound("w", "first reply")
+    ws = engine._workers["w"]
+    assert ws.pending_permissions == []
+    assert any(e.kind == "outbound" and e.content == "first reply" for e in ws.events)
+
+
+async def test_outbound_auto_sweep_persists_to_disk(
+    tmp_path: Path,
+):
+    """The auto-sweep must persist its cleanup to the worker JSON file —
+    otherwise a hub restart could re-load the stuck entry from disk and
+    the symptom recurs. Verified by re-loading a fresh engine and
+    checking the in-memory state."""
+    import time as _time
+    eng = BridgeEngine(data_dir=tmp_path)
+    await eng.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="x", tool_name="Bash")
+    await eng.record_permission_request("w", payload)
+    for ev in eng._workers["w"].events:
+        if ev.kind == "permission_request":
+            ev.ts -= 3600
+    eng._persist("w")
+    # Wedge the in-memory state too so we know the disk reflects the
+    # backdated request before the outbound fires.
+    await eng.record_outbound("w", "moved on")
+    assert eng._workers["w"].pending_permissions == []
+
+    fresh = BridgeEngine(data_dir=tmp_path)
+    assert fresh._workers["w"].pending_permissions == []

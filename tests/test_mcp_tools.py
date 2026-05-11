@@ -7,9 +7,27 @@ from pathlib import Path
 import pytest
 from fastmcp import FastMCP
 
-from tubemail_hub.bridge.engine import BridgeEngine
-from tubemail_hub.bridge.models import PermissionRequestPayload
+from tubemail_hub.bridge.engine import BridgeEngine, _new_event_id
+from tubemail_hub.bridge.models import PermissionRequestPayload, WorkerEvent
 from tubemail_hub.tools import workers as workers_tools
+
+
+def _append_outbound(engine: BridgeEngine, worker: str, content: str = "moved on") -> None:
+    """Append a synthetic outbound event without going through
+    `record_outbound`. Tests of the explicit sweep admin tool use this
+    to avoid `record_outbound`'s auto-sweep claiming the drop first.
+    The auto-sweep behavior is pinned by tests in test_bridge_engine.py.
+    """
+    import time as _t
+    ws = engine._workers[worker]
+    ws.events.append(WorkerEvent(
+        event_id=_new_event_id(),
+        ts=_t.time(),
+        kind="outbound",
+        content=content,
+        meta={},
+    ))
+    ws.last_activity = ws.events[-1].ts
 
 
 @pytest.fixture
@@ -365,7 +383,7 @@ async def test_sweep_stale_permissions_tool_reports_dropped_workers(
     for ev in engine._workers["stuck-tm"].events:
         if ev.kind == "permission_request":
             ev.ts -= 3600
-    await engine.record_outbound("stuck-tm", "moved on")
+    _append_outbound(engine, "stuck-tm")
 
     result = await _call(mcp, "tm_sweep_stale_permissions")
     data = result.structured_content
@@ -385,7 +403,7 @@ async def test_sweep_stale_permissions_tool_scopes_to_one_worker(
         for ev in engine._workers[w].events:
             if ev.kind == "permission_request":
                 ev.ts -= 3600
-        await engine.record_outbound(w, "moved on")
+        _append_outbound(engine, w)
 
     result = await _call(mcp, "tm_sweep_stale_permissions", worker="a")
     data = result.structured_content
