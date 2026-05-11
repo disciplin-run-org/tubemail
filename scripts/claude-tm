@@ -2,12 +2,12 @@
 # claude-tm — monorepo-dev shim that delegates to the Python entry point.
 #
 # The real launcher lives at `python -m tubemail.claude_tm` and is
-# installed onto PATH as `claude-tm` by `pip install tubemail`. This
+# installed onto PATH as `claude-tm` by `pip install tubemail-channel`. This
 # script exists to preserve the monorepo dev workflow: it sources the
 # repo-root .env (so $TUBEMAIL_SECRET is set) and then execs the Python
 # launcher.
 #
-# Production users do NOT need this file — `pip install tubemail`
+# Production users do NOT need this file — `pip install tubemail-channel`
 # already ships `claude-tm` on PATH. Use this only when you want the
 # convenience of "I keep my .env at the monorepo root."
 #
@@ -15,7 +15,7 @@
 #     pip install -e tubemail/channel/ --no-build-isolation
 #     ln -s "$(pwd)/tubemail/scripts/claude-tm" ~/.local/bin/claude-tm
 #
-# Once `pip install tubemail` lands on PyPI for real users, this shim is
+# Once `pip install tubemail-channel` lands on PyPI for real users, this shim is
 # strictly optional: drop a .env in your project's cwd (or
 # ~/.config/tubemail/.env) and claude-tm picks it up automatically.
 

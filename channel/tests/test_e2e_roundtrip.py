@@ -3,7 +3,7 @@
 Spawns `tubemail` as a subprocess with pipes, simulates the MCP messages
 Claude Code would send, and verifies the hub receives and acts on them.
 
-Requires the tubemail-hub container (port 8004) to be running with
+Requires the tubemail (hub) container (port 8004) to be running with
 TUBEMAIL_SECRET set in the environment. Skipped automatically if either
 condition is unmet, so `pytest tests/` can run cleanly even without Docker.
 
@@ -40,7 +40,7 @@ def _hub_reachable() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not SECRET or not _hub_reachable(),
-    reason="tubemail-hub not reachable on localhost:8004 or TUBEMAIL_SECRET unset",
+    reason="tubemail hub not reachable on localhost:8004 or TUBEMAIL_SECRET unset",
 )
 
 

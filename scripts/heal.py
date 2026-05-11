@@ -28,7 +28,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / ".env"
 COMPOSE_FILE = REPO / "docker-compose.yml"
-SERVICE = "tubemail-hub"
+SERVICE = "tubemail"
 HEALTH_URL = "http://localhost:8004/health"
 HEALTH_TIMEOUT_S = 30
 HEALTH_INTERVAL_S = 1

@@ -63,8 +63,8 @@ Two packages — one for each side.
 
 | Side | Install | Binary / tools |
 |------|---------|----------------|
-| Worker | `pip install tubemail` | `claude-tm` (Python launcher → `tubemail.manager` → `claude`) |
-| Hub | `pip install tubemail-hub` | MCP server at `:8004`; `tm_*` tools; web UI |
+| Worker | `pip install tubemail-channel` | `claude-tm` (Python launcher → `tubemail.manager` → `claude`) |
+| Hub | `pip install tubemail` | MCP server at `:8004`; `tm_*` tools; web UI |
 
 For local development:
 
@@ -85,11 +85,11 @@ bind-mounted read-only over the image's editable-install path. Edits to
 container — no rebuild needed for Python changes.
 
 ```bash
-docker compose up --build tubemail-hub   # first run — builds the image
+docker compose up --build tubemail   # first run — builds the image
 # from here on:
 # edit src/tubemail_hub/…   → uvicorn reloads automatically
 # edit frontend/src/…  →  npm --prefix frontend run build to ship the bundle
-docker compose restart tubemail-hub      # only needed for entrypoint / compose changes
+docker compose restart tubemail      # only needed for entrypoint / compose changes
 ```
 
 `VERSION` and `frontend/dist` are mounted the same way, so a bump or a
@@ -100,7 +100,7 @@ rebuild on the host is live without a container rebuild.
 1. **Start the hub:**
    ```bash
    echo 'TUBEMAIL_SECRET=change-me' > .env
-   docker compose up -d tubemail-hub
+   docker compose up -d tubemail
    ```
 
 2. **Open the web UI** at <http://localhost:8004>. On localhost the
@@ -110,10 +110,10 @@ rebuild on the host is live without a container rebuild.
 
 3. **Start a worker** in any project directory:
    ```bash
-   pip install tubemail
+   pip install tubemail-channel
    cd /path/to/your/project && claude-tm
    ```
-   `pip install tubemail` puts `claude-tm` on your PATH. Export
+   `pip install tubemail-channel` puts `claude-tm` on your PATH. Export
    `TUBEMAIL_SECRET` in your shell, or drop a `.env` containing it in
    the project directory (or at `~/.config/tubemail/.env`) — `claude-tm`
    auto-loads it. The worker registers as `<dirname>-tm` and appears in

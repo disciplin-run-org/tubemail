@@ -1,5 +1,5 @@
 #!/bin/sh
-# tubemail-hub container entrypoint.
+# tubemail (hub) container entrypoint.
 #
 # Defaults to production: uvicorn without --reload, no source bind-mounts
 # expected. Dev mode is opted in via the MCP_RELOAD=1 env var, set by

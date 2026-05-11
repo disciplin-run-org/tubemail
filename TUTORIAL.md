@@ -26,8 +26,8 @@ The rest is depth.
 | You need | Why |
 |---|---|
 | Docker + Docker Compose | The hub runs as a container. |
-| Python 3.10+ | The worker-side `tubemail` package is a Python channel plugin. |
-| Node.js 18+ (only for dev) | To build the web UI bundle. Skip this if you `pip install tubemail-hub` and use the prebuilt frontend. |
+| Python 3.10+ | The worker-side `tubemail-channel` package is a Python plugin. |
+| Node.js 18+ (only for dev) | To build the web UI bundle. Skip this if you `pip install tubemail` and use the prebuilt frontend. |
 | Claude Code | The thing being orchestrated. |
 | ~30 MB of disk for the hub image | Bind-mounted state lives at `<repo>/data/`. |
 
@@ -48,7 +48,7 @@ cd tubemail
 echo "TUBEMAIL_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" > .env
 
 # 2. Start the hub
-docker compose up -d tubemail-hub
+docker compose up -d tubemail
 
 # 3. Verify
 curl -s http://localhost:8004/health | python -m json.tool

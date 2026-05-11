@@ -88,7 +88,7 @@ def test() -> dict:
             if var != "TUBEMAIL_SECRET" and env_dot.get(var) and not env_ctr.get(var):
                 warn(f"{var} set in .env but container has it empty —")
                 warn(f"  check that docker-compose.yml passes ${{{var}}} through")
-                warn(f"  to the {os.path.basename('tubemail-hub')} service stanza")
+                warn(f"  to the {os.path.basename('tubemail')} service stanza")
         return result_fail("env_drift")
     ok(f"container env matches .env for {', '.join(WATCHED_ENV_VARS)}")
 

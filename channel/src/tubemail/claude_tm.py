@@ -1,6 +1,6 @@
 """claude-tm — managed Claude Code worker session wired into TubeMail.
 
-This is the user-facing entry point installed by ``pip install tubemail``.
+This is the user-facing entry point installed by ``pip install tubemail-channel``.
 It launches ``claude`` inside :mod:`tubemail.manager` (a Python process
 manager that runs claude in a pty) and supervises the manager with a
 restart loop that matches the legacy bash script's semantics:

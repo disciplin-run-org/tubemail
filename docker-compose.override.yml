@@ -11,7 +11,7 @@
 # - frontend/dist is also bind-mounted so `npm run build` (or `vite
 #   --watch`) on the host updates the UI without an image rebuild.
 services:
-  tubemail-hub:
+  tubemail:
     environment:
       - MCP_RELOAD=1
     volumes:

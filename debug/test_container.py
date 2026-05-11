@@ -1,4 +1,4 @@
-"""Container layer: tubemail-hub is running and healthy.
+"""Container layer: tubemail (hub) is running and healthy.
 
 Issues this catches:
 - Container stopped (compose down, OOM, manual rm)

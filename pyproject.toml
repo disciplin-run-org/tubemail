@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tubemail-hub"
+name = "tubemail"
 version = "0.13.1"
 description = "Orchestration hub routing work between Claude Code sessions via tubemail channel plugin"
 readme = "README.md"

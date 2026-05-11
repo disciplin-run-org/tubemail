@@ -25,8 +25,8 @@ COMPOSE_OVERRIDE = REPO_ROOT / "docker-compose.override.yml"
 ENV_FILE = REPO_ROOT / ".env"
 
 # ── Service identity ──────────────────────────────────────────────────────────
-SERVICE = "tubemail-hub"
-CONTAINER = "tubemail-tubemail-hub-1"
+SERVICE = "tubemail"
+CONTAINER = "tubemail-tubemail-1"
 PORT = 8004
 BASE = f"http://localhost:{PORT}"
 

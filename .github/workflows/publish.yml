@@ -5,18 +5,17 @@ name: Publish to PyPI
 # workflow then builds both packages and uploads them via PyPI's
 # Trusted Publisher OIDC flow (no API tokens).
 #
-# Trusted publisher registration (one-time, in PyPI account settings):
+# Trusted publisher registration (one-time, in PyPI project settings):
 #
-#   For `tubemail` and again for `tubemail-hub` — register a pending
-#   publisher with:
-#     PyPI Project Name = tubemail        (then again with tubemail-hub)
+#   For `tubemail` (the hub) AND `tubemail-channel` (the worker plugin),
+#   register a publisher with:
 #     Owner             = disciplin-run-org
 #     Repository name   = tubemail
 #     Workflow name     = publish.yml
 #     Environment name  = pypi
 #
-# After the first successful publish, the pending publisher becomes a
-# real publisher and the registration is permanent.
+# Hub package = tubemail (built from repo root).
+# Channel package = tubemail-channel (built from ./channel).
 
 on:
   release:
@@ -34,9 +33,9 @@ jobs:
           python-version: "3.12"
       - name: Install build
         run: python -m pip install --upgrade build
-      - name: Build tubemail (channel)
+      - name: Build tubemail-channel (worker plugin)
         run: python -m build --outdir dist-channel ./channel
-      - name: Build tubemail-hub (root)
+      - name: Build tubemail (hub)
         run: python -m build --outdir dist-hub .
       - name: Upload channel artifacts
         uses: actions/upload-artifact@v4
@@ -50,7 +49,7 @@ jobs:
           path: dist-hub/
 
   publish-tubemail:
-    name: Publish tubemail to PyPI
+    name: Publish tubemail (hub) to PyPI
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -59,28 +58,28 @@ jobs:
     permissions:
       id-token: write  # required for Trusted Publisher OIDC
     steps:
-      - name: Download channel artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-channel
-          path: dist/
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-tubemail-hub:
-    name: Publish tubemail-hub to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/tubemail-hub
-    permissions:
-      id-token: write  # required for Trusted Publisher OIDC
-    steps:
       - name: Download hub artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist-hub
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-tubemail-channel:
+    name: Publish tubemail-channel (worker plugin) to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tubemail-channel
+    permissions:
+      id-token: write  # required for Trusted Publisher OIDC
+    steps:
+      - name: Download channel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-channel
           path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
