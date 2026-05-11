@@ -1,156 +1,41 @@
 #!/bin/bash
-# claude-tm — managed Claude Code worker session wired into TubeMail.
+# claude-tm — monorepo-dev shim that delegates to the Python entry point.
 #
-# Thin bash wrapper: sources the monorepo .env (to get TUBEMAIL_SECRET)
-# and runs `claude` inside the Python process manager (tubemail.manager)
-# which auto-restarts on crash and accepts SIGUSR1 for on-demand restarts
-# (new tools, CLAUDE.md changes, hangs).
+# The real launcher lives at `python -m tubemail.claude_tm` and is
+# installed onto PATH as `claude-tm` by `pip install tubemail`. This
+# script exists to preserve the monorepo dev workflow: it sources the
+# repo-root .env (so $TUBEMAIL_SECRET is set) and then execs the Python
+# launcher.
 #
-# Install (one-time):
+# Production users do NOT need this file — `pip install tubemail`
+# already ships `claude-tm` on PATH. Use this only when you want the
+# convenience of "I keep my .env at the monorepo root."
+#
+# Install (one-time, monorepo dev):
 #     pip install -e tubemail/channel/ --no-build-isolation
 #     ln -s "$(pwd)/tubemail/scripts/claude-tm" ~/.local/bin/claude-tm
 #
-# Usage:
-#     cd /path/to/leanspecs && claude-tm                 → leanspecs-tm
-#     cd /path/to/leanspecs && claude-tm --role spec     → leanspecs-spec-tm
-#     TM_WORKER_NAME=leanspecs-b claude-tm               → leanspecs-b-tm
-#     claude-tm --role spec --continue                   # extra args pass through
-#
-# Role flag lets multiple concurrent sessions for the same project coexist
-# under distinct names (e.g. one working on code, another on specs).
-#
-# Restart a running worker (from any terminal):
-#     kill -USR1 $(cat /tmp/claude-tm-leanspecs-tm.pid)
-#
-# The PID file at /tmp/claude-tm-<name>.pid lets the orchestrator find and
-# signal this process. The Python manager handles SIGUSR1 by terminating
-# the child claude process and restarting it cleanly.
+# Once `pip install tubemail` lands on PyPI for real users, this shim is
+# strictly optional: drop a .env in your project's cwd (or
+# ~/.config/tubemail/.env) and claude-tm picks it up automatically.
 
 set -euo pipefail
 
 # Resolve paths: this script lives at <monorepo>/tubemail/scripts/claude-tm.
-# Use realpath to follow symlinks so it works when installed via symlink onto PATH.
+# realpath follows symlinks so it works when installed via symlink onto PATH.
 SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
 TUBEMAIL_DIR="$(dirname "$(dirname "$SCRIPT_PATH")")"
 MONOREPO_ROOT="$(dirname "$TUBEMAIL_DIR")"
 ENV_FILE="$MONOREPO_ROOT/.env"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "claude-tm: env file not found at $ENV_FILE" >&2
-    echo "claude-tm: expected monorepo root at $MONOREPO_ROOT" >&2
-    exit 1
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    set +a
 fi
 
-set -a
-# shellcheck source=/dev/null
-source "$ENV_FILE"
-set +a
-
-if [[ -z "${TUBEMAIL_SECRET:-}" ]]; then
-    echo "claude-tm: TUBEMAIL_SECRET not set in $ENV_FILE" >&2
-    exit 1
-fi
-
-# Parse --role NAME before passing the rest to the manager.
-ROLE=""
-PASSTHRU_ARGS=()
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --role)
-            ROLE="$2"
-            shift 2
-            ;;
-        --role=*)
-            ROLE="${1#--role=}"
-            shift
-            ;;
-        *)
-            PASSTHRU_ARGS+=("$1")
-            shift
-            ;;
-    esac
-done
-
-BASE="$(basename "$PWD")"
-if [[ -n "${TM_WORKER_NAME:-}" ]]; then
-    SESSION_NAME="${TM_WORKER_NAME}-tm"
-elif [[ -n "$ROLE" ]]; then
-    SESSION_NAME="${BASE}-${ROLE}-tm"
-else
-    SESSION_NAME="${BASE}-tm"
-fi
-
-# Refuse to start if a live process already holds the pidfile — prevents
-# accidental duplicate registration that causes silent tubemail fan-out
-# to multiple sessions. Use TM_FORCE=1 to override.
-PIDFILE="/tmp/claude-tm-${SESSION_NAME}.pid"
-if [[ -f "$PIDFILE" ]]; then
-    EXISTING_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
-    if [[ -n "$EXISTING_PID" ]] && kill -0 "$EXISTING_PID" 2>/dev/null; then
-        if [[ "${TM_FORCE:-}" != "1" ]]; then
-            echo "claude-tm: worker '$SESSION_NAME' already running as pid $EXISTING_PID" >&2
-            echo "claude-tm: pass TM_FORCE=1 to start anyway, or use --role <name> for a distinct session" >&2
-            exit 1
-        fi
-        echo "claude-tm: TM_FORCE=1 — starting alongside existing pid $EXISTING_PID" >&2
-    fi
-fi
-
-# Restart loop. Exit codes from tubemail.manager:
-#   0  — clean exit (user /exit'd); loop terminates.
-#   42 — EXIT_UPDATE_WRAPPER: re-exec python so any updated tubemail
-#        source is picked up. We force --continue so the conversation
-#        resumes on the next run. Session name (and role, baked into it)
-#        is unchanged so the same worker identity persists.
-#   other — crash recovery, bounded by TM_MAX_CRASH_RESTARTS (default 5)
-#        so a broken install doesn't loop forever.
-#
-# Role preservation across restarts: --role is parsed ONCE at script
-# startup (above) and consumed into $SESSION_NAME. The variable persists
-# for the life of this bash process, so every re-exec of python passes
-# the same session name. Claude launches with `--name $SESSION_NAME`,
-# which encodes the role (e.g. leanspecs-spec-tm). No explicit --role
-# flag needs to flow through the restart loop; role is implicit in the
-# identity that propagates.
-TM_MAX_CRASH_RESTARTS="${TM_MAX_CRASH_RESTARTS:-5}"
-crash_count=0
-
-_has_continue_flag() {
-    local a
-    for a in "$@"; do
-        [[ "$a" == "--continue" || "$a" == "-c" ]] && return 0
-    done
-    return 1
-}
-
-while true; do
-    set +e
-    python -m tubemail.manager "$SESSION_NAME" "${PASSTHRU_ARGS[@]}"
-    rc=$?
-    set -e
-
-    case $rc in
-        0)
-            break
-            ;;
-        42)
-            echo "claude-tm: manager-update signal (rc=42), re-execing python" >&2
-            crash_count=0
-            if ! _has_continue_flag "${PASSTHRU_ARGS[@]}"; then
-                PASSTHRU_ARGS+=(--continue)
-            fi
-            ;;
-        *)
-            crash_count=$((crash_count + 1))
-            if (( crash_count >= TM_MAX_CRASH_RESTARTS )); then
-                echo "claude-tm: $TM_MAX_CRASH_RESTARTS crashes in a row (last rc=$rc), giving up" >&2
-                exit 1
-            fi
-            echo "claude-tm: python exited rc=$rc, restart #$crash_count" >&2
-            sleep 2
-            if ! _has_continue_flag "${PASSTHRU_ARGS[@]}"; then
-                PASSTHRU_ARGS+=(--continue)
-            fi
-            ;;
-    esac
-done
+# Hand off. tubemail.claude_tm handles arg parsing, pidfile checks,
+# session-name resolution, and the restart loop — all of which used to
+# live here in bash.
+exec python -m tubemail.claude_tm "$@"

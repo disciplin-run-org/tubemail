@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 tubemail = "tubemail.__main__:main"
+claude-tm = "tubemail.claude_tm:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

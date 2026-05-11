@@ -1,0 +1,286 @@
+"""claude-tm — managed Claude Code worker session wired into TubeMail.
+
+This is the user-facing entry point installed by ``pip install tubemail``.
+It launches ``claude`` inside :mod:`tubemail.manager` (a Python process
+manager that runs claude in a pty) and supervises the manager with a
+restart loop that matches the legacy bash script's semantics:
+
+* exit code 0 → clean ``/exit``; loop terminates.
+* exit code 42 (``EXIT_UPDATE_MANAGER``) → manager asked for a re-exec
+  so it can pick up updated tubemail source. We restart the subprocess
+  with ``--continue`` appended.
+* anything else → crash. We retry up to ``TM_MAX_CRASH_RESTARTS``
+  (default 5), sleeping 2s between attempts, then give up.
+
+Usage::
+
+    cd /path/to/project && claude-tm                  # → <project>-tm
+    cd /path/to/project && claude-tm --role spec      # → <project>-spec-tm
+    TM_WORKER_NAME=foo claude-tm                      # → foo-tm
+    claude-tm --role spec --continue                  # extra args pass through
+
+Environment::
+
+    TUBEMAIL_SECRET        required. Bearer shared with the hub.
+    TUBEMAIL_HUB_URL       default http://localhost:8004.
+    TM_WORKER_NAME         override auto-derived worker name.
+    TM_FORCE=1             start even if the pidfile says we're already running.
+    TM_MAX_CRASH_RESTARTS  default 5.
+    TUBEMAIL_ENV_FILE      path to a KEY=value file sourced before run.
+
+If ``TUBEMAIL_ENV_FILE`` is unset, claude-tm auto-loads (first hit wins,
+existing env vars are never overwritten):
+
+1. ``.env`` walking up from the current working directory (capped at
+   five parent levels — covers the common case of a repo-root ``.env``
+   while you launch ``claude-tm`` from a subdirectory, without scanning
+   the entire filesystem).
+2. ``~/.config/tubemail/.env``.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Parse a simple KEY=value file. Strips matched surrounding quotes."""
+    out: dict[str, str] = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return out
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in {'"', "'"}:
+            val = val[1:-1]
+        if key:
+            out[key] = val
+    return out
+
+
+# Cap the upward .env walk so we never scan the entire filesystem. Five
+# levels covers any reasonable monorepo layout (project → repo → group
+# → org → workspace → home) without surprises.
+_ENV_WALK_MAX_LEVELS = 5
+
+
+def _find_dotenv_upward(start: Path) -> Path | None:
+    """Walk up from ``start`` looking for ``.env``. Stop at the home dir or root."""
+    home = Path.home().resolve()
+    cur = start.resolve()
+    seen = 0
+    while seen <= _ENV_WALK_MAX_LEVELS:
+        cand = cur / ".env"
+        if cand.is_file():
+            return cand
+        if cur == home or cur.parent == cur:
+            return None
+        cur = cur.parent
+        seen += 1
+    return None
+
+
+def _load_env_files() -> None:
+    """Populate os.environ from optional env files. Never overwrites existing keys."""
+    candidates: list[Path] = []
+    explicit = os.environ.get("TUBEMAIL_ENV_FILE", "").strip()
+    if explicit:
+        candidates.append(Path(explicit))
+    found = _find_dotenv_upward(Path.cwd())
+    if found is not None:
+        candidates.append(found)
+    candidates.append(Path.home() / ".config" / "tubemail" / ".env")
+    for cand in candidates:
+        if not cand.is_file():
+            continue
+        for k, v in _parse_env_file(cand).items():
+            os.environ.setdefault(k, v)
+        return
+
+
+def _parse_args(argv: list[str]) -> tuple[str, list[str]]:
+    """Pop ``--role NAME`` / ``--role=NAME`` from argv. Return ``(role, remaining)``."""
+    role = ""
+    out: list[str] = []
+    it = iter(argv)
+    for tok in it:
+        if tok == "--role":
+            try:
+                role = next(it)
+            except StopIteration:
+                print("claude-tm: --role requires a value", file=sys.stderr)
+                sys.exit(2)
+        elif tok.startswith("--role="):
+            role = tok[len("--role=") :]
+        else:
+            out.append(tok)
+    return role, out
+
+
+def _resolve_session_name(role: str) -> str:
+    """Compute the worker session name.
+
+    Precedence: ``$TM_WORKER_NAME`` > basename of cwd, with ``-tm`` always
+    appended and ``-<role>`` injected before ``-tm`` when role is set.
+    """
+    override = os.environ.get("TM_WORKER_NAME", "").strip()
+    if override:
+        return f"{override}-tm"
+    base = Path.cwd().name or "worker"
+    if role:
+        return f"{base}-{role}-tm"
+    return f"{base}-tm"
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but is owned by another uid — still alive.
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _check_pidfile(session_name: str) -> None:
+    """Refuse to start if a live process already owns the pidfile."""
+    pidfile = Path(f"/tmp/claude-tm-{session_name}.pid")
+    if not pidfile.exists():
+        return
+    try:
+        existing = int(pidfile.read_text().strip())
+    except (OSError, ValueError):
+        return
+    if not _pid_alive(existing):
+        return
+    if os.environ.get("TM_FORCE", "").strip() == "1":
+        print(
+            f"claude-tm: TM_FORCE=1 — starting alongside existing pid {existing}",
+            file=sys.stderr,
+        )
+        return
+    print(
+        f"claude-tm: worker '{session_name}' already running as pid {existing}",
+        file=sys.stderr,
+    )
+    print(
+        "claude-tm: pass TM_FORCE=1 to start anyway, "
+        "or use --role <name> for a distinct session",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _has_continue_flag(args: list[str]) -> bool:
+    return any(a in {"--continue", "-c"} for a in args)
+
+
+# Sentinel for "manager wants a re-exec so it can pick up updated source."
+# Duplicated from tubemail.manager.EXIT_UPDATE_MANAGER to avoid importing
+# the manager module (and all of its dependencies) in this thin wrapper.
+EXIT_UPDATE_MANAGER = 42
+
+
+_HELP_TEXT = """\
+claude-tm — managed Claude Code worker session wired into TubeMail.
+
+Usage:
+  claude-tm                       # worker name = <basename of cwd>-tm
+  claude-tm --role NAME           # name = <basename>-<role>-tm
+  TM_WORKER_NAME=foo claude-tm    # name = foo-tm
+  claude-tm --continue            # extra args forwarded to claude
+
+Environment:
+  TUBEMAIL_SECRET        required. Bearer shared with the hub.
+  TUBEMAIL_HUB_URL       default http://localhost:8004.
+  TM_WORKER_NAME         override auto-derived worker name.
+  TM_FORCE=1             ignore an existing pidfile and start anyway.
+  TM_MAX_CRASH_RESTARTS  default 5.
+  TUBEMAIL_ENV_FILE      explicit path to a KEY=value file.
+
+If TUBEMAIL_ENV_FILE is unset, claude-tm auto-loads `.env` walking up
+from cwd (cap: 5 parent levels), then ~/.config/tubemail/.env. Existing
+env vars are never overwritten.
+"""
+
+
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in {"-h", "--help"}:
+        print(_HELP_TEXT)
+        return
+
+    _load_env_files()
+
+    if not os.environ.get("TUBEMAIL_SECRET", "").strip():
+        print(
+            "claude-tm: TUBEMAIL_SECRET is not set.\n"
+            "  Export it in your shell, drop it in ./.env or "
+            "~/.config/tubemail/.env,\n"
+            "  or point TUBEMAIL_ENV_FILE at a KEY=value file before running.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    role, passthru = _parse_args(sys.argv[1:])
+    session_name = _resolve_session_name(role)
+    _check_pidfile(session_name)
+
+    try:
+        max_crash = int(os.environ.get("TM_MAX_CRASH_RESTARTS", "5"))
+    except ValueError:
+        max_crash = 5
+    crash_count = 0
+
+    while True:
+        cmd = [sys.executable, "-m", "tubemail.manager", session_name, *passthru]
+        try:
+            rc = subprocess.call(cmd)
+        except KeyboardInterrupt:
+            sys.exit(130)
+
+        if rc == 0:
+            return
+        if rc == EXIT_UPDATE_MANAGER:
+            print(
+                "claude-tm: manager-update signal (rc=42), restarting",
+                file=sys.stderr,
+            )
+            crash_count = 0
+            if not _has_continue_flag(passthru):
+                passthru.append("--continue")
+            continue
+
+        crash_count += 1
+        if crash_count >= max_crash:
+            print(
+                f"claude-tm: {max_crash} crashes in a row "
+                f"(last rc={rc}), giving up",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(
+            f"claude-tm: manager exited rc={rc}, restart #{crash_count}",
+            file=sys.stderr,
+        )
+        time.sleep(2)
+        if not _has_continue_flag(passthru):
+            passthru.append("--continue")
+
+
+if __name__ == "__main__":
+    main()

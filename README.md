@@ -63,7 +63,7 @@ Two packages — one for each side.
 
 | Side | Install | Binary / tools |
 |------|---------|----------------|
-| Worker | `pip install tubemail` | `claude-tm` (bash wrapper → `tubemail.manager` → `claude`) |
+| Worker | `pip install tubemail` | `claude-tm` (Python launcher → `tubemail.manager` → `claude`) |
 | Hub | `pip install tubemail-hub` | MCP server at `:8004`; `tm_*` tools; web UI |
 
 For local development:
@@ -110,10 +110,14 @@ rebuild on the host is live without a container rebuild.
 
 3. **Start a worker** in any project directory:
    ```bash
-   ln -s $(pwd)/scripts/claude-tm ~/.local/bin/claude-tm
+   pip install tubemail
    cd /path/to/your/project && claude-tm
    ```
-   The worker registers as `<dirname>-tm` and appears in the roster.
+   `pip install tubemail` puts `claude-tm` on your PATH. Export
+   `TUBEMAIL_SECRET` in your shell, or drop a `.env` containing it in
+   the project directory (or at `~/.config/tubemail/.env`) — `claude-tm`
+   auto-loads it. The worker registers as `<dirname>-tm` and appears in
+   the roster. Use `--role <name>` to run multiple workers per project.
 
 4. **From an orchestrator session** (with the `tubemail` MCP server
    added to `.mcp.json`):
