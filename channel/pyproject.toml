@@ -6,7 +6,24 @@ build-backend = "setuptools.build_meta"
 name = "tubemail"
 version = "0.13.0"
 description = "Claude Code channel plugin relaying events between a worker session and the TubeMail hub"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Jesper Jurcenoks" }]
 requires-python = ">=3.10"
+keywords = ["claude-code", "mcp", "ai-agents", "agent-orchestration", "pty"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
 dependencies = [
     "httpx>=0.25",
     "httpx-sse>=0.4",
@@ -24,6 +41,11 @@ dev = [
 [project.scripts]
 tubemail = "tubemail.__main__:main"
 claude-tm = "tubemail.claude_tm:main"
+
+[project.urls]
+Homepage = "https://github.com/disciplin-run-org/tubemail"
+Repository = "https://github.com/disciplin-run-org/tubemail"
+Issues = "https://github.com/disciplin-run-org/tubemail/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
