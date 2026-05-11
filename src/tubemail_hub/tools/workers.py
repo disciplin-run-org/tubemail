@@ -659,7 +659,10 @@ def register(mcp, engine: BridgeEngine) -> None:
 
     @mcp.tool
     async def tm_clear_and_send(
-        worker: str, message: str, delay_s: float = 1.5
+        worker: str,
+        message: str,
+        delay_s: float = 1.5,
+        restore_name: bool = True,
     ) -> dict[str, Any]:
         """Atomically /clear the worker's conversation, then dispatch a new
         task.
@@ -670,9 +673,14 @@ def register(mcp, engine: BridgeEngine) -> None:
 
         Flow:
           1. /clear is typed into the worker's pty via the manager.
-          2. We wait `delay_s` (default 1.5s) for claude to finish wiping
-             its conversation.
-          3. The actual `message` is routed through the tubemail channel
+          2. Wait `delay_s` for claude to finish wiping its conversation.
+          3. If `restore_name` (default), type `/rename <worker>` into the
+             pty so the session name survives the clear. Claude's /clear
+             resets the session to the directory-derived default; without
+             this step the worker reappears under its repo name and
+             tubemail loses track of which session is which.
+          4. Wait `delay_s` again for the rename to settle.
+          5. The actual `message` is routed through the tubemail channel
              to the now-fresh claude session.
 
         Do NOT use this when continuing an in-flight task or when the
@@ -680,7 +688,8 @@ def register(mcp, engine: BridgeEngine) -> None:
         the /clear keystroke can hit the wrong surface.
 
         Returns event_ids for both the clear and the message so you can
-        track them independently.
+        track them independently. When `restore_name` is true the response
+        also carries `rename_event_id`.
         """
         # Safety gate — same rule as tm_update_manager
         ws = engine.get_worker(worker)
@@ -692,16 +701,37 @@ def register(mcp, engine: BridgeEngine) -> None:
                 "pending_count": len(ws.pending_permissions) if ws else 0,
             }
         manager = f"{worker}-manager"
-        clear_event = await engine.enqueue_inbound(manager, "/clear", {"kind": "clear"})
         import asyncio as _asyncio
 
+        clear_event = await engine.enqueue_inbound(manager, "/clear", {"kind": "clear"})
         await _asyncio.sleep(max(0.0, delay_s))
+
+        rename_event_id: str | None = None
+        if restore_name:
+            # Restore the session name claude resets after /clear. Routed
+            # to the manager (it owns the pty), not the worker — the
+            # manager's rename: handler types `/rename <name>\r` into the
+            # session. The previous delay_s gave /clear time to finish
+            # so this keystroke doesn't bleed into an unsettled prompt.
+            rename_event = await engine.enqueue_inbound(
+                manager, f"/rename {worker}", {"kind": f"rename:{worker}"}
+            )
+            rename_event_id = rename_event.event_id
+            await _asyncio.sleep(max(0.0, delay_s))
+        #end if
+
         msg_event = await engine.enqueue_inbound(worker, message, {})
         return {
             "clear_event_id": clear_event.event_id,
+            "rename_event_id": rename_event_id,
             "message_event_id": msg_event.event_id,
             "delay_s": delay_s,
-            "routed_to": {"clear": manager, "message": worker},
+            "restored_name": restore_name,
+            "routed_to": {
+                "clear": manager,
+                "rename": manager if restore_name else None,
+                "message": worker,
+            },
         }
 
     @mcp.tool(task=True)

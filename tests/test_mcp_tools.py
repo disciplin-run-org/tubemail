@@ -274,7 +274,7 @@ async def test_update_manager_refuses_unknown_worker(mcp_and_engine):
 
 
 async def test_clear_and_send_routes_both_events(mcp_and_engine):
-    """Clear goes to <worker>-manager; message goes to <worker> timeline."""
+    """Clear and rename go to <worker>-manager; message goes to <worker>."""
     mcp, engine = mcp_and_engine
     await engine.register_worker("w", "/")
     result = await _call(
@@ -286,14 +286,46 @@ async def test_clear_and_send_routes_both_events(mcp_and_engine):
     )
     data = result.structured_content
     assert "clear_event_id" in data
+    assert "rename_event_id" in data
+    assert data["rename_event_id"] is not None
     assert "message_event_id" in data
-    assert data["routed_to"] == {"clear": "w-manager", "message": "w"}
+    assert data["restored_name"] is True
+    assert data["routed_to"] == {
+        "clear": "w-manager",
+        "rename": "w-manager",
+        "message": "w",
+    }
     # Message lands on the worker's own timeline (not the manager's).
     worker_events = engine.events_since("w")
     assert any(e.content == "new task" for e in worker_events)
-    # Clear lands on the manager timeline with kind=clear.
+    # Both clear and rename land on the manager timeline.
     manager_events = engine.events_since("w-manager")
     assert any(e.meta.get("kind") == "clear" for e in manager_events)
+    assert any(e.meta.get("kind") == "rename:w" for e in manager_events)
+
+
+async def test_clear_and_send_restore_name_false_skips_rename(mcp_and_engine):
+    """`restore_name=False` keeps the legacy two-step flow for callers
+    that want to manage the rename themselves (or accept the worker
+    losing its session identity)."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    result = await _call(
+        mcp,
+        "tm_clear_and_send",
+        worker="w",
+        message="new task",
+        delay_s=0.01,
+        restore_name=False,
+    )
+    data = result.structured_content
+    assert data["rename_event_id"] is None
+    assert data["restored_name"] is False
+    assert data["routed_to"]["rename"] is None
+    manager_events = engine.events_since("w-manager")
+    assert not any(
+        e.meta.get("kind", "").startswith("rename:") for e in manager_events
+    )
 
 
 async def test_clear_and_send_refuses_when_not_idle(mcp_and_engine):
