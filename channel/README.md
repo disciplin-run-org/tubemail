@@ -6,6 +6,31 @@ to a TubeMail hub. It implements the `experimental.claude/channel` and
 Claude Code session, or any HTTP client of the hub) can deliver work, observe
 permission prompts, and receive structured replies.
 
+## SECURITY WARNING — this plugin gives the configured hub full control of your Claude Code session
+
+`tubemail-channel` lets the TubeMail hub at `TUBEMAIL_HUB_URL` drive the
+Claude Code session it is installed in. Whoever controls that hub — or
+whoever has the `TUBEMAIL_SECRET` bearer — can:
+
+- Send arbitrary messages and harness commands (`/clear`, `/exit`,
+  `/compact`, `/mcp …`, `/rename …`) into your session.
+- Approve permission prompts remotely, granting the LLM tools you would
+  have declined in person.
+- Send raw keystrokes directly to the worker's pty, including shell
+  commands that execute as your user.
+- Read every screenshot, recording, and event from the session.
+- Interrupt, restart, or stop the worker.
+
+In short: anyone with control of the hub can do anything to your Claude
+Code session that you could do at the keyboard.
+
+**Only point `TUBEMAIL_HUB_URL` at a hub you 100% control and trust.**
+Do not install this plugin against someone else's TubeMail instance, a
+SaaS, or a public demo unless you fully accept that the operator can
+read and drive your session. Treat `TUBEMAIL_SECRET` like a root
+password — anyone with that value can do everything listed above
+without ever touching the hub host.
+
 This README documents the contract the plugin offers to the LLM running inside
 the worker session — chiefly the **MCP tools** the LLM can call, the
 **notifications** the LLM should pay attention to, and the **environment
