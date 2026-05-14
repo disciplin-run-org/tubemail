@@ -14,17 +14,17 @@ from tubemail.manager import (
 SAMPLE_MCP_DIALOG = """Manage MCP servers
 11 servers
 
-Project MCPs (/home/jesper/PycharmProjects/ai-agents/leanspecs/.mcp.json)
+Project MCPs (~/projects/ai-agents/leanspecs/.mcp.json)
 ❯ google-workspace · ✔ connected
 iris-qa · ✔ connected
 leanspecs · ✘ failed
 tubemail · ✔ connected
 tubemail · ✔ connected
 
-Local MCPs (/home/jesper/.claude.json [project: /home/jesper/PycharmProjects/ai-agents/leanspecs])
+Local MCPs (~/.claude.json [project: ~/projects/ai-agents/leanspecs])
 mock-refresh · ✘ failed
 
-User MCPs (/home/jesper/.claude.json)
+User MCPs (~/.claude.json)
 context7 · ✔ connected
 
 claude.ai

@@ -30,7 +30,7 @@ Evidence:
 ```
 $ docker exec tubemail-tubemail-hub-1 ls /data/tubemail/workers/ | wc -l
 65
-$ ls /home/jesper/PycharmProjects/ai-agents/tubemail/data/tubemail/workers/ | wc -l
+$ ls ./tubemail/data/tubemail/workers/ | wc -l
 0   # the data-dir bind-mount isn't used by the current (pre-session) container
 ```
 

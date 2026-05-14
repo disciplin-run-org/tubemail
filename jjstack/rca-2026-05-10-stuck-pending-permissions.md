@@ -86,10 +86,10 @@ is ever sent to the hub.
   exists on disk (`/tmp/tubemail-hook-tubemail-tm.sock`,
   owner=jesper, mode=srw-------) but nothing writes to it.
 - **evidence:**
-  - `grep -rn '/tmp/tubemail-hook' /home/jesper/.claude/{hooks,skills}` —
+  - `grep -rn '/tmp/tubemail-hook' ~/.claude/{hooks,skills}` —
     only the channel's own permission_bridge.py docstring matches; no
     hook script references this path.
-  - `grep -n 'TM_WORKER_NAME\\|tubemail-hook-' /home/jesper/.claude/hooks/auto-approve-safe.sh`
+  - `grep -n 'TM_WORKER_NAME\\|tubemail-hook-' ~/.claude/hooks/auto-approve-safe.sh`
     returns no matches.
   - The channel's `HookServer.start()` creates the socket but is dead
     code from the caller side.
