@@ -1,7 +1,7 @@
 /**
  * Configurable navigation sidebar.
  *
- * Vendored from @ai-agents/shared-ui (sibling monorepo package) so this
+ * Vendored from @disciplin-run/shared-ui (sibling monorepo package) so this
  * frontend stands alone in CI without checking out the parent monorepo.
  * Pull updates from the source manually if its API or behavior changes.
  *

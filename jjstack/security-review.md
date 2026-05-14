@@ -137,7 +137,7 @@ No new findings beyond those already in the eng plan.
 Quick check of `.claude/settings.json`, `CLAUDE.md`, `.mcp.json` in the tubemail repo.
 
 - No `.claude/settings.json` in the tubemail repo (per `ls` — not found).
-- `CLAUDE.md` — project-level file exists at the ai-agents monorepo root. Contents audited earlier in this session; no "always approve" / "skip verification" instructions. Clean.
+- `CLAUDE.md` — project-level file exists at the disciplin-run monorepo root. Contents audited earlier in this session; no "always approve" / "skip verification" instructions. Clean.
 - `.mcp.json` — not present in tubemail repo.
 
 No config-audit findings.

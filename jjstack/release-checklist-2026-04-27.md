@@ -6,7 +6,7 @@ landscape, hero options, risks).
 
 ## State
 
-- Repo: `JesperJurcenoks/tubemail` — **private**, 0 stars, no
+- Repo: `disciplin-run-org/tubemail` — **private**, 0 stars, no
   description, no topics, no homepage URL.
 - Code: v0.2.0 + 12 modified / 7 untracked files of audit work
   (SPA cache headers, dev/prod compose split, `task=True` on
@@ -49,7 +49,7 @@ all in Gates 0–2.
 - [ ] Secret audit: `git log -p -G '(TUBEMAIL_SECRET|sk-|api[_-]?key)'`
       and a grep for internal hostnames in committed files.
 - [ ] `gh repo edit` to set description, topics, homepage URL.
-      Topics: claude-code, mcp, mcp-server, ai-agents,
+      Topics: claude-code, mcp, mcp-server, disciplin-run,
       agent-orchestration, multi-agent, claude, anthropic, fastmcp,
       pty, developer-tools.
 - [ ] Flip repo to public — last step, only after the rest is in.

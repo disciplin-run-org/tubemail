@@ -57,10 +57,10 @@ async def test_list_workers_groups_roles_under_project(mcp_and_engine):
     """Two role-scoped workers in the same project render as a grouped tree."""
     mcp, engine = mcp_and_engine
     await engine.register_worker(
-        "leanspecs-code-tm", "/test/ai-agents/leanspecs"
+        "leanspecs-code-tm", "/test/disciplin-run/leanspecs"
     )
     await engine.register_worker(
-        "leanspecs-spec-tm", "/test/ai-agents/leanspecs"
+        "leanspecs-spec-tm", "/test/disciplin-run/leanspecs"
     )
     result = await _call(mcp, "tm_list_workers")
     text = result.structured_content["result"]
@@ -79,7 +79,7 @@ async def test_list_workers_single_worker_not_grouped(mcp_and_engine):
     tree."""
     mcp, engine = mcp_and_engine
     await engine.register_worker(
-        "leanspecs-tm", "/test/ai-agents/leanspecs"
+        "leanspecs-tm", "/test/disciplin-run/leanspecs"
     )
     result = await _call(mcp, "tm_list_workers")
     text = result.structured_content["result"]

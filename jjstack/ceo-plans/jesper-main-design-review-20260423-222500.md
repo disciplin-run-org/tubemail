@@ -20,7 +20,7 @@ badges, pop-out) slot in cleanly.
 
 The ecosystem already has a design token set at
 `leanspecs/frontend/src/styles.css` and the shared `variables.css`
-referenced from `@ai-agents/shared-ui`. Reuse verbatim:
+referenced from `@disciplin-run/shared-ui`. Reuse verbatim:
 
 | Token | Value | Use in tubemail |
 |---|---|---|

@@ -43,7 +43,7 @@ browser.
 
 ```bash
 # 1. Clone and configure
-git clone git@github.com:JesperJurcenoks/tubemail.git
+git clone git@github.com:disciplin-run-org/tubemail.git
 cd tubemail
 echo "TUBEMAIL_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" > .env
 
@@ -451,4 +451,4 @@ pane in the web UI while recording. Tracked in
   `quartermaster` placeholder is where that future SaaS orchestrator
   backend lives in this ecosystem; build your own or wait for that.
 - **File an issue or send a PR.** GitHub:
-  <https://github.com/JesperJurcenoks/tubemail>.
+  <https://github.com/disciplin-run-org/tubemail>.

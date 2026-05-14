@@ -30,7 +30,7 @@ Out of scope (a different repo or a client-side bug):
 - CC's /mcp dialog refusing to reconnect after this script makes the
   hub healthy → user runs /mcp Reconnect (or Authenticate) themselves.
 - Forwarder workers' connection state — they live in another process.
-- Other ai-agents services (leanspecs, iris-qa, quartermaster) — each
+- Other disciplin-run services (leanspecs, iris-qa, quartermaster) — each
   gets its own debug/ framework.
 """
 from __future__ import annotations

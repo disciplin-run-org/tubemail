@@ -482,7 +482,7 @@ function AuthGate({ onAuthed }: { onAuthed: (token: string) => void }) {
         On the machine running the hub, the token lives in <code>.env</code>
         as <code>TUBEMAIL_SECRET</code>. To grab it:
       </p>
-      <pre className="auth-gate-cmd">grep TUBEMAIL_SECRET ~/PycharmProjects/ai-agents/tubemail/.env</pre>
+      <pre className="auth-gate-cmd">grep TUBEMAIL_SECRET ~/PycharmProjects/disciplin-run/tubemail/.env</pre>
       <p className="auth-gate-hint">
         Paste the value (everything after the <code>=</code>) here. It's
         saved in your browser's localStorage for this origin only — no

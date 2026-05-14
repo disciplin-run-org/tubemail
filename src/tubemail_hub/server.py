@@ -144,7 +144,7 @@ def create_app() -> FastAPI:
     register_flow_tools(mcp, engine, flow_store)
 
     # MCP server-categories contract — see
-    # ai-agents/jjstack/20260428-mcp-server-categories.md. Tubemail is
+    # disciplin-run/jjstack/20260428-mcp-server-categories.md. Tubemail is
     # repo_agnostic: pure transport/orchestration, no per-repo state at
     # the request layer. Identity is `worker name + flow id`. The
     # ecosystem standard expects every server to expose a `server_info`
@@ -167,7 +167,7 @@ def create_app() -> FastAPI:
         """Return this MCP server's category metadata. Clients call this
         once at session start to discover whether the server is
         multi_repo / repo_agnostic / pan_repo. See
-        ai-agents/jjstack/20260428-mcp-server-categories.md."""
+        disciplin-run/jjstack/20260428-mcp-server-categories.md."""
         return _SERVER_INFO_PAYLOAD
 
     mcp_asgi = mcp.http_app(path="/", json_response=True)
@@ -285,7 +285,7 @@ def create_app() -> FastAPI:
     # client-side routes (`/workers/iris-qa-tm`) while still 404ing
     # asset misses and OAuth-discovery probes (`.well-known/`, `oauth/`)
     # — see tubemail_hub._shared.static, which is auto-synced from
-    # ai-agents/shared/mcp/static.py.
+    # disciplin-run/shared/mcp/static.py.
     #
     # Path resolution order (first hit wins):
     #   1. TUBEMAIL_STATIC_DIR env var — explicit operator override

@@ -62,7 +62,7 @@ failing test first; passing tests come second.
 ## The `_shared/` mirror — read-only
 
 TubeMail is distributed as a standalone OSS project. Its container does NOT
-`pip install shared/` from the ai-agents monorepo. The small set of shared
+`pip install shared/` from the disciplin-run monorepo. The small set of shared
 modules tubemail needs are mirrored into
 `src/tubemail_hub/_shared/` by a sync script at the monorepo root
 (`scripts/sync-shared-to-submodules.py`).
@@ -71,7 +71,7 @@ modules tubemail needs are mirrored into
 that directory carries an auto-generated header that says so. If you need
 a change to a synced module:
 
-1. Edit the canonical source under `ai-agents/shared/` in the monorepo
+1. Edit the canonical source under `disciplin-run/shared/` in the monorepo
    (that is a separate work order — file it back to whoever owns `shared/`,
    not yourself).
 2. Re-run `python scripts/sync-shared-to-submodules.py` from the monorepo
@@ -88,7 +88,7 @@ Unlike most submodules in this monorepo, tubemail is a public-facing
 standalone project under MIT. Treat the boundary strictly:
 
 - `pyproject.toml` and `requirements.txt` here describe what tubemail
-  itself needs. Do not add `ai-agents-shared` as a dependency.
+  itself needs. Do not add `disciplin-run-shared` as a dependency.
 - Anything new you want from `shared/` must come in via the sync script,
   not via an import path that only works inside the monorepo.
 - The `tubemail-channel` package ships separately (`channel/`) and has its

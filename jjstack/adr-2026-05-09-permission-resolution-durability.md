@@ -288,7 +288,7 @@ mcp__tubemail__tm_sweep_stale_permissions(worker="<worker-name>")
 ```
 
 (Once the new tool ships.) Or: edit the worker's JSON file directly —
-e.g. `docker exec ai-agents-tubemail-1 python -c "..."` — to drop the
+e.g. `docker exec disciplin-run-tubemail-1 python -c "..."` — to drop the
 stuck entry, then restart the hub container so in-memory state reloads
 from disk.
 
@@ -306,7 +306,7 @@ pending list), `rm` the file. The channel will skip it on next drain.
 
 ```bash
 # Across the fleet — total should be 0 unless a real human is waiting.
-docker exec ai-agents-tubemail-1 python -c "
+docker exec disciplin-run-tubemail-1 python -c "
 import json, glob
 total = 0
 for path in glob.glob('/data/workers/*.json'):

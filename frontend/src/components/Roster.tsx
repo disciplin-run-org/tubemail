@@ -405,7 +405,7 @@ function RosterRow({
   const dirty = isDirty(version)
   const isStale = mgrUp === true && sha !== '' && currentSha !== '' && sha !== currentSha
   const isCurrent = mgrUp === true && sha !== '' && currentSha !== '' && sha === currentSha && !dirty
-  const cwd = (worker.cwd || '').replace(/^\/home\/[^/]+\/PycharmProjects\/ai-agents\//, '')
+  const cwd = (worker.cwd || '').replace(/^\/home\/[^/]+\/PycharmProjects\/disciplin-run\//, '')
 
   // Optimistic toggle: flip immediately on click, then let the props refresh
   // confirm. If the API call fails, revert. Stays predictable through the

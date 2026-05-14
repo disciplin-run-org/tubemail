@@ -67,7 +67,7 @@ champion tier.** Good.
 **Strong:**
 - Single command setup: `docker compose up`. ✓
 - `tryDevBootstrap` skips the auth gate on localhost. ✓
-- The auth gate, when it does appear, has a `grep TUBEMAIL_SECRET ~/PycharmProjects/ai-agents/tubemail/.env`
+- The auth gate, when it does appear, has a `grep TUBEMAIL_SECRET ~/PycharmProjects/disciplin-run/tubemail/.env`
   hint right in the UI (`App.tsx:AuthGate`). That's good copy-paste-friendly help.
 - Default settings work without configuration. ✓
 

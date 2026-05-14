@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Jesper Jurcenoks" }]
 requires-python = ">=3.10"
-keywords = ["claude-code", "mcp", "mcp-server", "ai-agents", "agent-orchestration", "fastmcp"]
+keywords = ["claude-code", "mcp", "mcp-server", "disciplin-run", "agent-orchestration", "fastmcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: FastAPI",

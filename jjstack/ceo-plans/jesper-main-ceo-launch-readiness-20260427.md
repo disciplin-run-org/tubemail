@@ -18,7 +18,7 @@ distinctive thing the product does):
 > **Channel transport** (the bidirectional event bus between an MCP-driven orchestrator and a worker's Claude Code session). Justification: every other capability — permission inbox, web UI, recording, saved flows, restart manager — is a feature *of* the bus. Delete the bus and you have a desktop app like a dozen others. Delete any other capability and the bus is still the product.
 
 **OKR shape (Q2-2026 hypothesis, needs user sign-off):**
-- KR1 quantity: ≥ 200 GitHub stars on `JesperJurcenoks/tubemail` within 14 days of public flip — KPI: GitHub stars. **CALIBRATION FLAG:** the premise challenge below questions whether the addressable Day-1 audience supports this number. User to confirm or replace before announce; failing a too-aggressive KR is worse than passing a calibrated one.
+- KR1 quantity: ≥ 200 GitHub stars on `disciplin-run-org/tubemail` within 14 days of public flip — KPI: GitHub stars. **CALIBRATION FLAG:** the premise challenge below questions whether the addressable Day-1 audience supports this number. User to confirm or replace before announce; failing a too-aggressive KR is worse than passing a calibrated one.
 - KR2 quality: ≥ 5 third-party comments / PRs / issues from people who actually ran it (not "looks cool, starring"). KPI: distinct non-author GitHub interactions on substantive content.
 - KR3 efficiency: time-to-first-usable-call (orchestrator session → first successful `tm_send`) under 10 minutes from a clean machine. KPI: tutorial-walked timing or a self-reported value from new users.
 
@@ -42,7 +42,7 @@ distinctive thing the product does):
 Three challenges to "we should launch now."
 
 1. **The empty seat may be empty for a reason.**
-   The pitch is "let an agent drive other agents." Real adoption requires (a) someone running an orchestrator agent already and (b) wanting to programmatically address other Claude sessions instead of operating them. The user (Jesper) does this for himself with Quartermaster + ai-agents monorepo. **How many other people have an orchestrator agent today?** If the answer is "a few dozen," that's the entire reachable Day-1 audience and a 200-star KR is wishful.
+   The pitch is "let an agent drive other agents." Real adoption requires (a) someone running an orchestrator agent already and (b) wanting to programmatically address other Claude sessions instead of operating them. The user (Jesper) does this for himself with Quartermaster + disciplin-run monorepo. **How many other people have an orchestrator agent today?** If the answer is "a few dozen," that's the entire reachable Day-1 audience and a 200-star KR is wishful.
    - **Counter:** the launch plan's framing flips this — the product also serves as a TUI-replacement for human operators who want to manage one Claude session via a web UI, not just orchestrators-of-orchestrators. The web UI + permission inbox + integrated terminal is a real feature even without the "agent drives agent" angle. If the orchestrator audience is narrow today, the human-operator audience is the floor.
    - **Implication:** the README hero must lead with BOTH framings. Today's draft (option A in the 04-25 plan) lands the orchestrator framing only. **Action:** rewrite the second paragraph to name the human-operator use case explicitly so the audience floor doesn't depend on a niche.
 

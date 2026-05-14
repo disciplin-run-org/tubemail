@@ -12984,7 +12984,7 @@
                   "owner": "Spec_import 2026-05-02T07:55:58+00:00",
                   "rationale": "Reduces UI implementation time and error.",
                   "summary": "Provides pre-built UI atoms like buttons, inputs, and tables.",
-                  "detail": "The system uses a library of shared components (e.g., @ai-agents/shared-ui). New pages reuse these to maintain a uniform ecosystem look.",
+                  "detail": "The system uses a library of shared components (e.g., @disciplin-run/shared-ui). New pages reuse these to maintain a uniform ecosystem look.",
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",

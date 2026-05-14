@@ -211,9 +211,9 @@ def register(mcp, engine: BridgeEngine) -> None:
                 f" ⚠️{w['pending_count']} pending" if w.get("pending_count") else ""
             )
             # Strip the monorepo root prefix to keep the row visually compact.
-            # AI_AGENTS_HOST_ROOT is set by docker-compose to the operator's
-            # ai-agents checkout path. Falls back to no-op when unset.
-            _host_root = os.environ.get("AI_AGENTS_HOST_ROOT", "")
+            # DISCIPLIN_RUN_HOST_ROOT is set by docker-compose to the operator's
+            # disciplin-run checkout path. Falls back to no-op when unset.
+            _host_root = os.environ.get("DISCIPLIN_RUN_HOST_ROOT", "")
             _prefix = (_host_root.rstrip("/") + "/") if _host_root else ""
             cwd = w.get("cwd", "")
             if _prefix and cwd.startswith(_prefix):
