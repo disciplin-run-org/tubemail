@@ -47,7 +47,7 @@ Measured from the README:
 1. echo 'TUBEMAIL_SECRET=change-me' > .env       (~5s)
 2. docker compose up -d tubemail-hub             (~30s first time, image build)
 3. cd <project>; claude-tm                       (~2s once installed)
-4. open http://localhost:8004                    (~2s)
+4. open http://localhost:8001                    (~2s)
 5. paste TUBEMAIL_SECRET into auth gate          (~10s, requires reading)
 ```
 

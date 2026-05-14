@@ -233,14 +233,14 @@ def test_posts_to_outbound_endpoint(hook_module, monkeypatch):
     monkeypatch.setattr(hook_module.urllib.request, "urlopen", fake_urlopen)
 
     hook_module._post_outbound(
-        hub_url="http://localhost:8004",
+        hub_url="http://localhost:8001",
         worker="leanspecs-tm",
         secret="abc123",
         text="my reply",
     )
 
     assert captured["url"] == (
-        "http://localhost:8004/tubemail/leanspecs-tm/outbound"
+        "http://localhost:8001/tubemail/leanspecs-tm/outbound"
     )
     assert captured["method"] == "POST"
     assert captured["auth"] == "Bearer abc123"
@@ -262,7 +262,7 @@ def test_post_failure_does_not_raise(hook_module, monkeypatch):
 
     # Must not raise. retries=1 + no-op sleep keeps the test fast.
     result = hook_module._post_outbound(
-        hub_url="http://localhost:8004",
+        hub_url="http://localhost:8001",
         worker="leanspecs-tm",
         secret="abc123",
         text="my reply",
@@ -297,7 +297,7 @@ def test_empty_hub_url_env_falls_back_to_default(tmp_path: Path):
     )
     # Hook must not abort with the urllib 'unknown url type' error.
     assert "unknown url type" not in proc.stderr
-    # POST will fail (no real hub at localhost:8004 in tests) but the spool
+    # POST will fail (no real hub at localhost:8001 in tests) but the spool
     # write succeeds, so the hook exits 0 — not 2. Exit 2 only fires when
     # spool ALSO fails (covered by the durability test).
     assert proc.returncode == 0

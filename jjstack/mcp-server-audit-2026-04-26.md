@@ -23,7 +23,7 @@ Scoring: ✅ pass · ⚠️ partial / minor · ❌ gap · — N/A
 | 6 | FastMCP `@mcp.tool` decorator | ✅ | 22 tools in `tools/workers.py` + 6 in `tools/flows.py` = 28 tools total |
 | 7 | Streamable HTTP(S) via `http_app()` + TLS auto-detect | ✅ | `server.py:162` (`mcp.http_app(path="/", json_response=True)`); `entrypoint.sh` switches `uvicorn --ssl-certfile/--ssl-keyfile` based on cert presence |
 | 8 | Self-signed cert in data volume | ❌ | No certs in `/data/`. Server runs HTTP. Acceptable for localhost dev; would block any non-localhost deploy. **Action:** generate certs when shipping beyond this host |
-| 9 | `MCP_PORT` set in compose | ✅ | `docker-compose.yml:8` — `MCP_PORT=8004` |
+| 9 | `MCP_PORT` set in compose | ✅ | `docker-compose.yml:8` — `MCP_PORT=8001` |
 | 10 | `network_mode: host` | ✅ | `docker-compose.yml:35` |
 | 11 | `/health` endpoint with `version` | ✅ | `server.py:217-243` — returns `status`, `service`, `version`, `workers_online`, `pending_permissions` |
 | 12 | Docker healthcheck | ✅ | `docker-compose.yml:25-30` — `curl -f /health` every 30s |
@@ -74,7 +74,7 @@ guidance (one canonical `task=True` pattern, no manual start/poll
 pair), all five gaps got fixed in one sweep.
 
 - **#13 — trailing slash dropped.** `.mcp.json` tubemail entry now
-  reads `http://localhost:8004/mcp`. The other-server entries are
+  reads `http://localhost:8001/mcp`. The other-server entries are
   outside this audit's scope and left as-is.
 
 - **#25 — Literal types — verified, no change needed.** Audit

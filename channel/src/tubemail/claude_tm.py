@@ -22,7 +22,7 @@ Usage::
 Environment::
 
     TUBEMAIL_SECRET        required. Bearer shared with the hub.
-    TUBEMAIL_HUB_URL       default http://localhost:8004.
+    TUBEMAIL_HUB_URL       default http://localhost:8001.
     TM_WORKER_NAME         override auto-derived worker name.
     TM_FORCE=1             start even if the pidfile says we're already running.
     TM_MAX_CRASH_RESTARTS  default 5.
@@ -207,7 +207,7 @@ Usage:
 
 Environment:
   TUBEMAIL_SECRET        required. Bearer shared with the hub.
-  TUBEMAIL_HUB_URL       default http://localhost:8004.
+  TUBEMAIL_HUB_URL       default http://localhost:8001.
   TM_WORKER_NAME         override auto-derived worker name.
   TM_FORCE=1             ignore an existing pidfile and start anyway.
   TM_MAX_CRASH_RESTARTS  default 5.

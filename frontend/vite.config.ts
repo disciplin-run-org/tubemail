@@ -13,10 +13,10 @@ export default defineConfig({
     // Proxy API calls to the hub during dev mode so the browser can treat
     // everything as same-origin and cookies / bearer headers flow cleanly.
     proxy: {
-      '/api': 'http://localhost:8004',
-      '/tubemail': 'http://localhost:8004',
-      '/health': 'http://localhost:8004',
-      '/mcp': 'http://localhost:8004',
+      '/api': 'http://localhost:8001',
+      '/tubemail': 'http://localhost:8001',
+      '/health': 'http://localhost:8001',
+      '/mcp': 'http://localhost:8001',
     },
   },
 })

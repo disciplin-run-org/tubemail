@@ -11,7 +11,7 @@ The rest is depth.
 
 ## What you'll have at the end
 
-- The TubeMail hub running in Docker on `localhost:8004`.
+- The TubeMail hub running in Docker on `localhost:8001`.
 - Two Claude Code sessions: an **orchestrator** (this one) and a
   **worker** in a separate terminal.
 - The web UI open in your browser, showing both sessions live.
@@ -51,7 +51,7 @@ echo "TUBEMAIL_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(3
 docker compose up -d tubemail
 
 # 3. Verify
-curl -s http://localhost:8004/health | python -m json.tool
+curl -s http://localhost:8001/health | python -m json.tool
 ```
 
 You should see something like:
@@ -68,7 +68,7 @@ You should see something like:
 }
 ```
 
-Open <http://localhost:8004> in your browser. You'll see an empty
+Open <http://localhost:8001> in your browser. You'll see an empty
 roster: "No workers connected — Launch one from any project directory:
 `claude-tm`."
 
@@ -151,7 +151,7 @@ Add to `.mcp.json` (or wherever your Claude Code reads MCP config):
   "mcpServers": {
     "tubemail": {
       "type": "http",
-      "url": "http://localhost:8004/mcp/",
+      "url": "http://localhost:8001/mcp/",
       "headers": {
         "Authorization": "Bearer <your TUBEMAIL_SECRET>"
       }

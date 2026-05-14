@@ -70,7 +70,7 @@ import urllib.request
 from pathlib import Path
 
 
-HUB_URL_DEFAULT = "http://localhost:8004"
+HUB_URL_DEFAULT = "http://localhost:8001"
 TIMEOUT_S = 5.0
 DEFAULT_RETRIES = 3
 # Backoff schedule between attempts. Index N is the wait BEFORE attempt N+1.

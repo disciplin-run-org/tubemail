@@ -42,7 +42,7 @@ variables** that wire it all together.
 |---|---|---|
 | `TM_WORKER_NAME` | yes | Worker name registered with the hub. The Stop hook self-skips when unset, so a session without this var behaves like a normal Claude Code session. |
 | `TUBEMAIL_SECRET` | yes | Bearer token for hub HTTP. Never logged. |
-| `TUBEMAIL_HUB_URL` | no (defaults to `http://localhost:8004`) | Base URL of the hub. **Empty string falls back to the default** — some launch wrappers export `TUBEMAIL_HUB_URL=''` instead of leaving it unset, so the empty case is treated as unset. |
+| `TUBEMAIL_HUB_URL` | no (defaults to `http://localhost:8001`) | Base URL of the hub. **Empty string falls back to the default** — some launch wrappers export `TUBEMAIL_HUB_URL=''` instead of leaving it unset, so the empty case is treated as unset. |
 | `TUBEMAIL_STOP_HOOK_RETRIES` | no (default `3`) | Stop-hook retry count. See `hooks/post_stop_relay.py`. |
 | `TUBEMAIL_STOP_HOOK_VERIFY` | no (default off) | When `1`, the Stop hook re-fetches the just-posted event via `GET /tubemail/<worker>/events` to confirm persistence. Doubles request count; off by default. |
 | `TUBEMAIL_STOP_HOOK_SPOOL_DIR` | no (test only) | Sandbox the per-worker spool directory. Production never sets this. |
@@ -85,7 +85,7 @@ Return the channel plugin's view of the hub link. Inputs: none.
   "registered": true,
   "register_failures_since_boot": 0,
   "last_outbound_success_at": 1714998765.123,
-  "hub_url": "http://localhost:8004"
+  "hub_url": "http://localhost:8001"
 }
 ```
 

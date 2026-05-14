@@ -15,7 +15,7 @@
   the LLM moved on, but the hub still reports `state="waiting_permission"`.
 - Verified concrete case (2026-05-10): request_id `iaptp`,
   tool=`Bash`, command=`curl -s -o /dev/null -w "%{http_code}"
-  http://localhost:8004/health`. Persisted ~7 minutes despite the
+  http://localhost:8001/health`. Persisted ~7 minutes despite the
   worker producing a `stop_relay` outbound 94s after the request.
 - Reproduces on every TM worker that goes through the local-auto-approve
   path (`auto-approve-safe.sh` returning `allow` without round-tripping
@@ -55,7 +55,7 @@ the local resolution.
 ### Branch A — Action
 
 Claude Code in a TM worker session needs to run a `Bash` tool
-(`curl -s -o /dev/null -w "%{http_code}" http://localhost:8004/health`)
+(`curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health`)
 that isn't in `settings.json` `permissions.allow`. The harness fires
 the `PermissionRequest` hook (`~/.claude/hooks/auto-approve-safe.sh`,
 symlinked to `~/.claude/skills/jjstack/hooks/auto-approve-safe.sh`).

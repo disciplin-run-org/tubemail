@@ -4,7 +4,7 @@ Spawned by `claude --dangerously-load-development-channels server:tubemail-chann
 as a stdio subprocess of a Claude Code worker session.
 
 Environment variables:
-    TUBEMAIL_HUB_URL       — TubeMail base URL (default: http://localhost:8004)
+    TUBEMAIL_HUB_URL       — TubeMail base URL (default: http://localhost:8001)
     TUBEMAIL_SECRET — required, shared bearer secret with the hub
     TM_WORKER_NAME   — override default worker name (basename of cwd)
 """
@@ -46,7 +46,7 @@ async def _run() -> int:
     _configure_logging()
     log = logging.getLogger("tubemail")
 
-    hub_url = os.environ.get("TUBEMAIL_HUB_URL", "http://localhost:8004")
+    hub_url = os.environ.get("TUBEMAIL_HUB_URL", "http://localhost:8001")
     secret = os.environ.get("TUBEMAIL_SECRET")
     if not secret:
         log.error("TUBEMAIL_SECRET not set — refusing to start")

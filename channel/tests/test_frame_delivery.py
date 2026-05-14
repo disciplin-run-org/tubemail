@@ -151,7 +151,7 @@ def _make_listener() -> _ManagerChannelListener:
     """Construct a listener bypassing __init__'s side effects (no hub
     registration). We only need the methods, not a live network."""
     listener = _ManagerChannelListener.__new__(_ManagerChannelListener)
-    listener._hub_url = "http://localhost:8004"
+    listener._hub_url = "http://localhost:8001"
     listener._name = "test-tm-manager"
     listener._secret = "x"
     listener._session_name = "test-tm"

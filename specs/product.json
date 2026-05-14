@@ -13389,7 +13389,7 @@
                   "owner": "Spec_import 2026-05-02T07:55:58+00:00",
                   "rationale": "Uses standard HTTP to push data to the bus.",
                   "summary": "Sends POST requests to the hub.",
-                  "detail": "The hook constructs the correct outbound URL and uses a standard HTTP POST client to send the JSON body. It defaults to localhost:8004 but allows configuration for other hubs.",
+                  "detail": "The hook constructs the correct outbound URL and uses a standard HTTP POST client to send the JSON body. It defaults to localhost:8001 but allows configuration for other hubs.",
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",

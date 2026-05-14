@@ -103,10 +103,10 @@ be MIT-compatible (Apache-2.0, BSD, MIT — yes; GPL/AGPL — no).
 # From the tubemail repo root
 echo 'TUBEMAIL_SECRET=change-me' > .env
 docker compose up -d tubemail
-curl -s http://localhost:8004/health
+curl -s http://localhost:8001/health
 ```
 
-The hub listens on port 8004 (HTTP + MCP at `/mcp/`, web UI at `/`, pty
+The hub listens on port 8001 (HTTP + MCP at `/mcp/`, web UI at `/`, pty
 WebSocket at `/ws/pty/<worker>`). Bearer auth uses `TUBEMAIL_SECRET`; on
 loopback the UI auto-loads it via `/api/dev-bootstrap`.
 
@@ -179,7 +179,7 @@ the tubemail channel plugin — yes, tubemail-tm runs over tubemail.
 ```
         browser ◀── HTTPS + WSS pty bridge ─────▶┌────────────────────┐
                                                  │  TubeMail hub      │
-   Orchestrator ◀── HTTP/SSE (MCP /mcp/) ───────▶│  FastMCP :8004     │
+   Orchestrator ◀── HTTP/SSE (MCP /mcp/) ───────▶│  FastMCP :8001     │
    (any MCP client)                              │  + web UI at /     │
                                                  └─────────┬──────────┘
                                                            │  HTTP/SSE
@@ -201,10 +201,10 @@ MCP, SSE for forwarder event streams, WebSocket for the pty bridge. See
 
 | Service | Port | Role (for cross-reference) |
 |---------|------|-----------------------------|
-| TubeMail hub | 8004 | This service — transport + operator surface |
-| Quartermaster | 8005 | Engineering-manager orchestrator (consumes `tm_*`) |
-| LeanSpecs | 8001 | Spec management |
-| iris-qa | 8003 | QA test generation + execution |
+| TubeMail hub | 8001 | This service — transport + operator surface |
+| Quartermaster | 8002 | Engineering-manager orchestrator (consumes `tm_*`) |
+| LeanSpecs | 8003 | Spec management |
+| iris-qa | 8004 | QA test generation + execution |
 | LiteLLM | 4000 | Local LLM proxy |
 
 TubeMail does not depend on any of these; they depend on it.

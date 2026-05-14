@@ -1574,7 +1574,7 @@ class _ManagerChannelListener:
 
 def run(session_name: str, extra_args: list[str] | None = None) -> int:
     """Run claude in a managed pty restart loop."""
-    hub_url = os.environ.get("TUBEMAIL_HUB_URL", "http://localhost:8004")
+    hub_url = os.environ.get("TUBEMAIL_HUB_URL", "http://localhost:8001")
     secret = os.environ.get("TUBEMAIL_SECRET", "")
 
     pidfile = _pidfile_path(session_name)

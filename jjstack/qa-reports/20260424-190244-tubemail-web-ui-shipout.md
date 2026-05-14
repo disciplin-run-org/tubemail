@@ -1,7 +1,7 @@
 # QA Report — tubemail web UI ship-out
 
 **Date:** 2026-04-24 19:02 local
-**Subject:** tubemail hub at `localhost:8004` — fresh rebuild covering web UI v1, /health correctness, dev-bootstrap, security hardening, code-split.
+**Subject:** tubemail hub at `localhost:8001` — fresh rebuild covering web UI v1, /health correctness, dev-bootstrap, security hardening, code-split.
 **Method:** Docker-first per jj-qa Rule 2 (no local-only services). Cleanup discipline per Rule 1 (snapshot before, restore after).
 **Health score:** **9.5 / 10** (one pre-existing test infra debt deducted, not a regression).
 
@@ -104,7 +104,7 @@ with 2-space indentation, matching the spec change made today.
 
 **Uvicorn cmdline confirms the reload-dir is the mount target:**
 ```
-uvicorn tubemail_hub.server:create_app --factory --host 0.0.0.0 --port 8004
+uvicorn tubemail_hub.server:create_app --factory --host 0.0.0.0 --port 8001
    --reload --reload-dir /app/src/tubemail_hub
 ```
 
@@ -164,7 +164,7 @@ follow-up dogfood pass knows what to spot-check:
    link from the popover — UI-level only.
 6. **Auto-bootstrap UX from a fresh browser** — confirmed the endpoint
    returns the secret over loopback, but the actual feel of "open
-   localhost:8004 → no password → straight to roster" needs a human
+   localhost:8001 → no password → straight to roster" needs a human
    click.
 
 ## Cleanup verification

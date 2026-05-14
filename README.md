@@ -37,7 +37,7 @@ WebSocket.
 ```
                                                   ┌──────────────────┐
        browser ◀──── HTTPS + WSS pty bridge ─────▶│  TubeMail hub    │
-                                                  │  FastMCP :8004   │
+                                                  │  FastMCP :8001   │
                                                   │  + web UI at /   │
        Orchestrator ◀── HTTP/SSE (MCP /mcp/) ────▶│                  │
        (any MCP client)                           └────────┬─────────┘
@@ -64,7 +64,7 @@ Two packages — one for each side.
 | Side | Install | Binary / tools |
 |------|---------|----------------|
 | Worker | `pip install tubemail-channel` | `claude-tm` (Python launcher → `tubemail.manager` → `claude`) |
-| Hub | `pip install tubemail` | MCP server at `:8004`; `tm_*` tools; web UI |
+| Hub | `pip install tubemail` | MCP server at `:8001`; `tm_*` tools; web UI |
 
 For local development:
 
@@ -103,7 +103,7 @@ rebuild on the host is live without a container rebuild.
    docker compose up -d tubemail
    ```
 
-2. **Open the web UI** at <http://localhost:8004>. On localhost the
+2. **Open the web UI** at <http://localhost:8001>. On localhost the
    bearer is auto-loaded; remote browsers paste the `TUBEMAIL_SECRET`
    value into the auth gate. The Workers tab shows the (initially empty)
    roster.
@@ -230,7 +230,7 @@ restarts under `<data>/hub-config.json`.
 | Var | Required | Purpose |
 |-----|----------|---------|
 | `TUBEMAIL_SECRET` | yes | Shared bearer secret between hub, channel, and browser |
-| `TUBEMAIL_HUB_URL` | no (default `http://localhost:8004`) | Where channels connect |
+| `TUBEMAIL_HUB_URL` | no (default `http://localhost:8001`) | Where channels connect |
 | `TM_WORKER_NAME` | no | Override the auto-derived worker name |
 | `TUBEMAIL_LOG` | no (default `WARNING`) | Channel log level |
 | `TUBEMAIL_LOG_FILE` | no | Path to channel log file |

@@ -5,10 +5,10 @@ Steps, in order:
   1. Ensure .env exists (bootstrap with a fresh TUBEMAIL_SECRET if missing).
   2. Ensure the hub image is built (docker compose build if not).
   3. Ensure the hub container is running (docker compose up -d if not).
-  4. Poll :8004/health until it responds (or fail with diagnostics).
+  4. Poll :8001/health until it responds (or fail with diagnostics).
 
 Exit codes:
-  0 — hub is healthy on :8004.
+  0 — hub is healthy on :8001.
   1 — heal failed; diagnostic output printed above.
 
 Run from the tubemail repo root:
@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / ".env"
 COMPOSE_FILE = REPO / "docker-compose.yml"
 SERVICE = "tubemail"
-HEALTH_URL = "http://localhost:8004/health"
+HEALTH_URL = "http://localhost:8001/health"
 HEALTH_TIMEOUT_S = 30
 HEALTH_INTERVAL_S = 1
 

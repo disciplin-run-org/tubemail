@@ -42,42 +42,42 @@ def _fake_ws(host: str, scheme: str = "ws", xfp: str | None = None) -> Any:
 
 
 def test_same_origin_localhost_match():
-    ws = _fake_ws("localhost:8004")
-    assert _is_same_origin(ws, "http://localhost:8004") is True
+    ws = _fake_ws("localhost:8001")
+    assert _is_same_origin(ws, "http://localhost:8001") is True
 
 
 def test_same_origin_tailscale_hostname_match():
     # The shape that broke over VPN before this fix.
-    ws = _fake_ws("my-machine.tail-scale.ts.net:8004")
+    ws = _fake_ws("my-machine.tail-scale.ts.net:8001")
     assert (
-        _is_same_origin(ws, "http://my-machine.tail-scale.ts.net:8004") is True
+        _is_same_origin(ws, "http://my-machine.tail-scale.ts.net:8001") is True
     )
 
 
 def test_same_origin_tailscale_cgnat_ip_match():
-    ws = _fake_ws("100.64.7.42:8004")
-    assert _is_same_origin(ws, "http://100.64.7.42:8004") is True
+    ws = _fake_ws("100.64.7.42:8001")
+    assert _is_same_origin(ws, "http://100.64.7.42:8001") is True
 
 
 def test_same_origin_lan_ip_match():
-    ws = _fake_ws("192.168.1.50:8004")
-    assert _is_same_origin(ws, "http://192.168.1.50:8004") is True
+    ws = _fake_ws("192.168.1.50:8001")
+    assert _is_same_origin(ws, "http://192.168.1.50:8001") is True
 
 
 def test_same_origin_case_insensitive_host():
-    ws = _fake_ws("MyHost.Local:8004")
-    assert _is_same_origin(ws, "http://myhost.local:8004") is True
+    ws = _fake_ws("MyHost.Local:8001")
+    assert _is_same_origin(ws, "http://myhost.local:8001") is True
 
 
 def test_same_origin_scheme_mismatch_rejected():
     # Plaintext hub, but Origin claims https — block (not same-origin).
-    ws = _fake_ws("localhost:8004", scheme="ws")
-    assert _is_same_origin(ws, "https://localhost:8004") is False
+    ws = _fake_ws("localhost:8001", scheme="ws")
+    assert _is_same_origin(ws, "https://localhost:8001") is False
 
 
 def test_same_origin_host_mismatch_rejected():
-    # Hub on :8004, malicious origin on :9999. Must reject.
-    ws = _fake_ws("localhost:8004")
+    # Hub on :8001, malicious origin on :9999. Must reject.
+    ws = _fake_ws("localhost:8001")
     assert _is_same_origin(ws, "http://localhost:9999") is False
 
 
@@ -94,13 +94,13 @@ def test_same_origin_forwarded_proto_chain_uses_first():
 
 
 def test_same_origin_garbage_origin_rejected():
-    ws = _fake_ws("localhost:8004")
+    ws = _fake_ws("localhost:8001")
     assert _is_same_origin(ws, "not-a-url") is False
 
 
 def test_same_origin_empty_host_rejected():
     ws = _fake_ws("")
-    assert _is_same_origin(ws, "http://localhost:8004") is False
+    assert _is_same_origin(ws, "http://localhost:8001") is False
 
 
 # ── _default_allowed_origins ──────────────────────────────────────────
