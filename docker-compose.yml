@@ -16,8 +16,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    network_mode: host
+    networks:
+      - tubemail
+    ports:
+      - "127.0.0.1:8001:8001"
     restart: unless-stopped
+
+networks:
+  tubemail:
+    driver: bridge
 
 volumes:
   tubemail-data:
