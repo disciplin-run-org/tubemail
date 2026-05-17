@@ -281,6 +281,46 @@ def _server_dialog_position(screen: str, server_name: str) -> int | None:
         return None
 
 
+# Matches a detail-view submenu row: optional cursor "❯", whitespace,
+# a 1-based row number, ".", whitespace, label text. The label may
+# include spaces and hyphens ("Re-authenticate", "Clear authentication").
+# Anchored to start-of-line so body fields like "Tools: 47 tools" don't
+# match (no leading "N.").
+_DETAIL_OPTION_RE = re.compile(r"^\s*[❯]?\s*(\d+)\.\s+(.+?)\s*$")
+
+
+def _parse_detail_menu_options(screen: str) -> dict[str, int]:
+    """Parse a server-detail submenu and return label → 1-based row.
+
+    The detail view opens after Enter is pressed on a server in the
+    /mcp list. Its rows look like::
+
+        ❯ 1. Authenticate
+          2. Reconnect
+          3. Disable
+
+    The row count and label set varies by server state (failed vs
+    connected, has-auth vs no-auth). Callers should look up "Reconnect"
+    (or "Restart") in the returned mapping rather than assuming a
+    fixed position — the original driver hardcoded "2" and silently
+    selected the wrong row whenever the menu wasn't the 3-item failed
+    layout it was originally tested against.
+    """
+    options: dict[str, int] = {}
+    for line in screen.splitlines():
+        m = _DETAIL_OPTION_RE.match(line)
+        if not m:
+            continue
+        pos, label = m.groups()
+        # Strip a trailing cursor marker if it slipped past the prefix
+        # capture (defensive — the regex already accepts a leading "❯").
+        label = label.strip()
+        if not label:
+            continue
+        options[label] = int(pos)
+    return options
+
+
 class _PtyChild:
     """Manages a child process running in a pseudo-terminal.
 
@@ -502,29 +542,66 @@ class _PtyChild:
             os.write(master, b"\x1b[B")
             time.sleep(0.15)
 
-        # 4. Enter to open server detail.
+        # 4. Clear the buffer so the screen we parse for the detail view is
+        #    only the detail view (not the cumulative buffer that still has
+        #    the main /mcp dialog plus any earlier output). Then Enter to
+        #    open server detail.
+        with self._screen_lock:
+            self._screen_buf.clear()
         os.write(master, b"\r")
+        # The detail-view footer "Enter to select · Esc to back" uniquely
+        # identifies the submenu (the main /mcp dialog footer reads
+        # "Enter to confirm · Esc to cancel" — different verbs). Anchor on
+        # that rather than on label keywords which can survive in the
+        # rolling buffer from earlier frames.
         if not self._wait_for_screen(
-            lambda s: "Reconnect" in s and ("Authenticate" in s or "Disable" in s),
+            lambda s: "Enter to select" in s,
             timeout_s=5.0,
         ):
             os.write(master, b"\x1b")
             return {
                 "ok": False,
                 "server": server_name,
-                "detail": "detail view did not appear (expected Authenticate/Reconnect/Disable menu)",
+                "detail": "detail view did not appear (no 'Enter to select' footer)",
             }
         time.sleep(0.3)
 
-        # 5. Numbered selection is more reliable than arrow-navigation in
-        #    the sub-menu: type "2" then Enter to pick Reconnect.
+        # 5. Parse the rendered submenu to find Reconnect's actual row.
+        #    The row number varies by server state — for a ✘ failed server
+        #    it's 2, for a ✔ connected server it's 4 — so the previous
+        #    hardcoded "2" silently selected the wrong row whenever the
+        #    layout wasn't 3-item-failed. Look up the real position.
+        detail = self._get_screen_text()
+        options = _parse_detail_menu_options(detail)
+        target = options.get("Reconnect") or options.get("Restart")
+        if target is None:
+            os.write(master, b"\x1b")
+            return {
+                "ok": False,
+                "server": server_name,
+                "detail": (
+                    "Reconnect/Restart option not in detail menu; "
+                    f"saw: {sorted(options)}"
+                ),
+            }
+
+        # 6. Type the digit for Reconnect's row. The submenu has two
+        #    valid input methods — (a) press the digit alone, which
+        #    selects that row immediately with no Enter required, or
+        #    (b) arrow-key navigation followed by Enter. Picking (a)
+        #    here because it's one byte, deterministic, and avoids the
+        #    arrow-batching pitfall that bit the previous fix. Do NOT
+        #    send a trailing Enter after the digit: it sits in Claude
+        #    Code's keyboard buffer and gets consumed by whatever
+        #    screen renders next, which is exactly what the original
+        #    buggy code did (its `b"2"` selected row 2 correctly on
+        #    the 3-item layout, but the trailing `b"\r"` then fired
+        #    on the next screen's default option).
         with self._screen_lock:
             self._screen_buf.clear()
-        os.write(master, b"2")
-        time.sleep(0.2)
-        os.write(master, b"\r")
+        self.send_bytes(str(target).encode())
 
-        # 6. Wait for the success/failure marker.
+        # 7. Wait for the success/failure marker.
         if self._wait_for_screen(
             lambda s: f"Reconnected to {server_name}" in s,
             timeout_s=20.0,
