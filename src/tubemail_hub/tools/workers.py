@@ -127,6 +127,39 @@ def _is_harness_command(message: str) -> bool:
     return first_word in HARNESS_COMMANDS
 
 
+def _detect_caller_worker() -> str | None:
+    """Best-effort detection of which worker is calling this MCP tool.
+
+    Checks (in priority order):
+    1. The ``x-tm-worker`` HTTP header on the inbound MCP request — a
+       forward-compatible signal nothing sends today, but worth wiring
+       so a future ``.mcp.json`` env-substituted header (or a client-
+       side header injection) can fold in without a hub change.
+    2. ``TM_WORKER_NAME`` in the hub process's env — works when the hub
+       is colocated with a single worker (typical local dev where one
+       claude-tm session both runs the hub and acts as the worker).
+
+    Returns the worker name string, or ``None`` if no signal is
+    available. This is *advisory* — callers MUST gracefully fall through
+    when ``None`` is returned, because in containerized multi-tenant
+    deployments neither signal is set today.
+    """
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        req = get_http_request()
+        if req is not None:
+            hdr = req.headers.get("x-tm-worker", "")
+            if hdr and hdr.strip():
+                return hdr.strip()
+    except Exception:
+        # No active HTTP request context (test harness, in-process call,
+        # or stdio transport) — fall through to env-var detection.
+        pass
+    env = os.environ.get("TM_WORKER_NAME", "").strip()
+    return env or None
+
+
 def register(mcp, engine: BridgeEngine) -> None:
     """Register worker-orchestration tools + meta-tools on the given
     FastMCP."""
@@ -741,8 +774,16 @@ def register(mcp, engine: BridgeEngine) -> None:
 
     @mcp.tool(task=True)
     async def tm_reconnect_mcp(worker: str, server: str) -> dict[str, Any]:
-        """Reconnect a failed MCP server on a worker without manual dialog
-        driving.
+        """Reconnect ANOTHER worker's failed MCP server (orchestrator path —
+        the hub round-trips through that worker's manager).
+
+        For YOUR OWN session's failed MCP server, use
+        ``mcp__tubemail-channel__reconnect_mcp(server=<name>)`` instead —
+        it talks to the local claude-tm manager over a Unix socket and
+        works even when the tubemail hub itself is the failed MCP. The
+        orchestrator path here cannot recover its own session: if your
+        MCP transport to tubemail is stale, the call returns "Session
+        not found" from the protocol layer before any tool dispatch.
 
         The worker's manager drives the /mcp dialog deterministically:
         open dialog → navigate to the named server → select Reconnect.
@@ -762,8 +803,26 @@ def register(mcp, engine: BridgeEngine) -> None:
         and you can't see the worker's screen from their own session.
 
         Returns `{ok, server, detail}`. On timeout returns
-        `{error, detail}` without a definitive ok flag.
+        `{error, detail}` without a definitive ok flag. When the caller's
+        identity is detectable AND matches ``worker`` (self-target),
+        returns ``{ok: false, server, detail, suggested_tool}`` instead
+        of round-tripping the hub — the orchestrator path is the wrong
+        tool for that case.
         """
+        caller = _detect_caller_worker()
+        if caller is not None and caller == worker:
+            return {
+                "ok": False,
+                "server": server,
+                "detail": (
+                    "self-target via the hub will fail when the hub or your "
+                    "own session is stale — use "
+                    f"mcp__tubemail-channel__reconnect_mcp(server='{server}')"
+                    " instead, which talks to the local manager via a Unix "
+                    "socket and bypasses the hub."
+                ),
+                "suggested_tool": "mcp__tubemail-channel__reconnect_mcp",
+            }
         manager = f"{worker}-manager"
         # Anchor the wait at the inbound event we just enqueued — without
         # this, wait_for_activity(since=None) returns instantly with

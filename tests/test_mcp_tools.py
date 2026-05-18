@@ -384,6 +384,96 @@ async def test_my_inbox_honors_limit(mcp_and_engine, monkeypatch):
     assert [e["content"] for e in data["events"]] == ["msg 7", "msg 8", "msg 9"]
 
 
+# ── tm_reconnect_mcp self-target sentry ──────────────────────────────────
+
+
+async def test_reconnect_mcp_returns_teaching_payload_on_self_target(
+    mcp_and_engine,
+    monkeypatch,
+):
+    """When `tm_reconnect_mcp(worker=W, server=S)` is called AND W matches
+    the caller's own worker identity (from TM_WORKER_NAME env, the cheapest
+    available signal), the hub returns a structured teaching payload
+    pointing at the channel-side tool — instead of round-tripping a
+    manager event that the caller almost certainly can't observe via the
+    hub when their own session is stale.
+    """
+    mcp, _ = mcp_and_engine
+    monkeypatch.setenv("TM_WORKER_NAME", "tubemail-tm")
+    result = await _call(
+        mcp, "tm_reconnect_mcp", worker="tubemail-tm", server="leanspecs"
+    )
+    data = result.structured_content
+    assert data["ok"] is False
+    assert data["server"] == "leanspecs"
+    assert data["suggested_tool"] == "mcp__tubemail-channel__reconnect_mcp"
+    # The teaching payload must name the right tool inline so an LLM that
+    # only reads `detail` (older clients without structured-output access)
+    # can still recover.
+    assert "mcp__tubemail-channel__reconnect_mcp" in data["detail"]
+
+
+async def test_reconnect_mcp_pass_through_when_not_self(
+    mcp_and_engine,
+    monkeypatch,
+):
+    """When the requested worker differs from the caller's identity, the
+    orchestrator path runs normally — no sentry interception, no
+    `suggested_tool` field on the response.
+    """
+    import asyncio
+    import json
+
+    mcp, engine = mcp_and_engine
+    monkeypatch.setenv("TM_WORKER_NAME", "tubemail-tm")
+    await engine.register_worker("other-tm-manager", "/")
+
+    async def post_manager_reply() -> None:
+        await asyncio.sleep(0.05)
+        await engine.record_outbound(
+            "other-tm-manager",
+            json.dumps({"ok": True, "server": "leanspecs", "detail": "reconnected"}),
+            {"kind": "reconnect_mcp_result", "ok": True, "server": "leanspecs"},
+        )
+
+    asyncio.create_task(post_manager_reply())
+    result = await _call(
+        mcp, "tm_reconnect_mcp", worker="other-tm", server="leanspecs"
+    )
+    data = result.structured_content
+    assert data == {"ok": True, "server": "leanspecs", "detail": "reconnected"}
+    assert "suggested_tool" not in data
+
+
+async def test_reconnect_mcp_no_intercept_when_env_unset(
+    mcp_and_engine,
+    monkeypatch,
+):
+    """No TM_WORKER_NAME → no self-target signal → no intercept. The hub
+    has no way to know the caller's identity, so the orchestrator path
+    runs and we fall through to the normal manager round-trip.
+    """
+    import asyncio
+    import json
+
+    mcp, engine = mcp_and_engine
+    monkeypatch.delenv("TM_WORKER_NAME", raising=False)
+    await engine.register_worker("some-tm-manager", "/")
+
+    async def post_manager_reply() -> None:
+        await asyncio.sleep(0.05)
+        await engine.record_outbound(
+            "some-tm-manager",
+            json.dumps({"ok": True, "server": "x", "detail": "reconnected"}),
+            {"kind": "reconnect_mcp_result", "ok": True, "server": "x"},
+        )
+
+    asyncio.create_task(post_manager_reply())
+    result = await _call(mcp, "tm_reconnect_mcp", worker="some-tm", server="x")
+    data = result.structured_content
+    assert "suggested_tool" not in data
+
+
 # ── tm_self_reconnect_mcp ────────────────────────────────────────────────
 
 
