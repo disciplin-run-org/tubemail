@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tubemail"
-version = "1.0.6"
+version = "1.0.7"
 description = "Orchestration hub routing work between Claude Code sessions via tubemail channel plugin"
 readme = "README.md"
 license = { text = "MIT" }
