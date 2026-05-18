@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from tubemail.manager import (
     EXIT_UPDATE_MANAGER,
+    TRANSIENT_RECONNECT_FAILURE_MARKERS,
     _extract_mcp_server_list,
+    _is_transient_reconnect_failure,
     _parse_detail_menu_options,
+    _retry_reconnect_attempts,
     _server_dialog_position,
 )
 
@@ -195,6 +198,151 @@ class TestParseDetailMenuOptions:
         # detail view rendered yet" from "detail view rendered, parsed N
         # options").
         assert _parse_detail_menu_options(SAMPLE_MCP_DIALOG) == {}
+
+
+class TestTransientFailureClassification:
+    """The polling-driven phases of reconnect_mcp emit three distinct
+    "detail" strings when they hit a transient timing failure. The retry
+    wrapper recognises these substrings and tries again; anything else
+    (e.g. "server not found in dialog" — a config issue) short-circuits.
+    """
+
+    def test_dialog_open_timeout_is_transient(self):
+        # Real string from manager.reconnect_mcp step 1.
+        assert _is_transient_reconnect_failure(
+            "/mcp dialog did not open within 5s"
+        )
+
+    def test_detail_view_missing_is_transient(self):
+        # Real string from manager.reconnect_mcp step 4.
+        assert _is_transient_reconnect_failure(
+            "detail view did not appear (no 'Enter to select' footer)"
+        )
+
+    def test_failure_marker_on_screen_is_transient(self):
+        # Real string from manager.reconnect_mcp step 7's failure branch.
+        assert _is_transient_reconnect_failure(
+            "reconnect finished with failure marker on screen"
+        )
+
+    def test_server_not_found_is_NOT_transient(self):
+        # Config issue — .mcp.json doesn't list this server. Retrying is
+        # pointless and just delays the user seeing the real error.
+        assert not _is_transient_reconnect_failure(
+            "server not found in dialog; listed: ['x', 'y']"
+        )
+
+    def test_reconnect_option_missing_is_NOT_transient(self):
+        # Menu state issue. Retrying won't change which submenu items
+        # the server's status produces.
+        assert not _is_transient_reconnect_failure(
+            "Reconnect/Restart option not in detail menu; saw: ['View tools']"
+        )
+
+    def test_empty_detail_is_NOT_transient(self):
+        # Defensive: a missing detail field shouldn't be treated as a
+        # cue to retry.
+        assert not _is_transient_reconnect_failure("")
+
+    def test_module_constant_lists_three_markers(self):
+        # The WO names exactly these three. Keep them surfaced as a
+        # module-level constant so the test pins the contract.
+        assert len(TRANSIENT_RECONNECT_FAILURE_MARKERS) == 3
+
+
+class TestRetryReconnectAttempts:
+    """The retry wrapper around the dialog driver. Pure function — takes
+    an `attempt_fn` callable so it can be tested without a real pty."""
+
+    def test_first_attempt_succeeds_no_retries(self):
+        calls = []
+
+        def attempt():
+            calls.append(1)
+            return {"ok": True, "server": "x", "detail": "reconnected"}
+
+        result = _retry_reconnect_attempts(attempt, sleeper=lambda _s: None)
+        assert result["ok"] is True
+        assert len(calls) == 1
+        # No retries-used field unless retries actually happened.
+        assert "retries_used" not in result
+        assert "retries_exhausted" not in result
+
+    def test_retries_on_transient_failure_then_succeeds(self):
+        outcomes = iter([
+            {"ok": False, "server": "x", "detail": "/mcp dialog did not open within 5s"},
+            {"ok": True, "server": "x", "detail": "reconnected"},
+        ])
+        sleeps = []
+
+        result = _retry_reconnect_attempts(
+            lambda: next(outcomes),
+            sleeper=sleeps.append,
+        )
+        assert result["ok"] is True
+        # Backoff was applied between attempts (one slept-on gap).
+        assert len(sleeps) == 1
+        # The wrapper reports how many retries it consumed so callers /
+        # logs can see retry happened.
+        assert result["retries_used"] == 1
+
+    def test_three_transients_returns_last_detail_with_retries_exhausted(self):
+        outcomes = iter([
+            {"ok": False, "server": "x", "detail": "/mcp dialog did not open within 5s"},
+            {"ok": False, "server": "x", "detail": "detail view did not appear (no 'Enter to select' footer)"},
+            {"ok": False, "server": "x", "detail": "reconnect finished with failure marker on screen"},
+        ])
+
+        result = _retry_reconnect_attempts(
+            lambda: next(outcomes),
+            sleeper=lambda _s: None,
+        )
+        assert result["ok"] is False
+        # The LAST detail string surfaces so the caller can see what
+        # kept failing at the end.
+        assert "failure marker on screen" in result["detail"]
+        assert result["retries_exhausted"] == 3
+
+    def test_non_transient_failure_short_circuits(self):
+        # "server not found" is a config issue — must NOT retry.
+        calls = []
+        sleeps = []
+
+        def attempt():
+            calls.append(1)
+            return {
+                "ok": False,
+                "server": "ghost",
+                "detail": "server not found in dialog; listed: ['x']",
+            }
+
+        result = _retry_reconnect_attempts(
+            attempt,
+            sleeper=sleeps.append,
+        )
+        assert result["ok"] is False
+        # Exactly one attempt, zero sleeps — no retry.
+        assert len(calls) == 1
+        assert sleeps == []
+        # No retry-bookkeeping fields on a short-circuit path.
+        assert "retries_used" not in result
+        assert "retries_exhausted" not in result
+
+    def test_default_backoff_is_under_one_second(self):
+        # The WO budget caps worst-case retry latency at ~10s to stay
+        # under the MCP task=True window. With max_attempts=3, that
+        # means each backoff stays < 1s.
+        outcomes = iter([
+            {"ok": False, "server": "x", "detail": "/mcp dialog did not open within 5s"},
+            {"ok": True, "server": "x", "detail": "reconnected"},
+        ])
+        sleeps = []
+
+        _retry_reconnect_attempts(
+            lambda: next(outcomes),
+            sleeper=sleeps.append,
+        )
+        assert sleeps and all(s < 1.0 for s in sleeps)
 
 
 class TestExitCodes:

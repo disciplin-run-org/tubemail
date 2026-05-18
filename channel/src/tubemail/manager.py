@@ -35,7 +35,7 @@ import threading
 import time
 import tty
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import psutil
@@ -289,6 +289,70 @@ def _server_dialog_position(screen: str, server_name: str) -> int | None:
 _DETAIL_OPTION_RE = re.compile(r"^\s*[❯]?\s*(\d+)\.\s+(.+?)\s*$")
 
 
+# Failure-detail substrings produced by `_PtyChild._attempt_reconnect_mcp`
+# that indicate a transient polling timeout (the manager opened the
+# dialog, navigated, or pressed Reconnect, but the screen buffer didn't
+# settle into the expected state within the deadline). The retry wrapper
+# in `_retry_reconnect_attempts` treats these as "try again with
+# backoff"; anything else (e.g. "server not found in dialog" — a config
+# issue) short-circuits without retrying because retrying can't fix it.
+TRANSIENT_RECONNECT_FAILURE_MARKERS: tuple[str, ...] = (
+    "/mcp dialog did not open",
+    "detail view did not appear",
+    "reconnect finished with failure marker on screen",
+)
+
+
+def _is_transient_reconnect_failure(detail: str) -> bool:
+    """Substring-match against `TRANSIENT_RECONNECT_FAILURE_MARKERS`.
+    Empty / None detail is treated as non-transient (defensive — a
+    missing detail field shouldn't trigger silent retries)."""
+    if not detail:
+        return False
+    return any(m in detail for m in TRANSIENT_RECONNECT_FAILURE_MARKERS)
+
+
+def _retry_reconnect_attempts(
+    attempt_fn: Callable[[], dict],
+    *,
+    max_attempts: int = 3,
+    backoff_s: float = 0.5,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> dict:
+    """Bounded retry around the reconnect-dialog driver.
+
+    Calls ``attempt_fn`` up to ``max_attempts`` times, sleeping
+    ``backoff_s`` between attempts. Returns the first successful result.
+    On a non-transient failure (anything not matching
+    ``TRANSIENT_RECONNECT_FAILURE_MARKERS``) returns immediately without
+    retrying — config issues like "server not found in dialog" don't
+    benefit from another round.
+
+    On retry-exhaust returns the LAST attempt's result with a
+    ``retries_exhausted: <max_attempts>`` field added so callers can
+    distinguish "tried once" from "tried until the budget ran out."
+    Successful results after one or more retries gain a
+    ``retries_used: <n>`` field for the same reason.
+
+    Pure function: ``attempt_fn`` and ``sleeper`` are injected so this
+    is testable without a real pty.
+    """
+    last_result: dict = {}
+    for attempt in range(1, max_attempts + 1):
+        last_result = attempt_fn()
+        if last_result.get("ok"):
+            if attempt > 1:
+                last_result["retries_used"] = attempt - 1
+            return last_result
+        detail = last_result.get("detail", "")
+        if not _is_transient_reconnect_failure(detail):
+            return last_result
+        if attempt < max_attempts:
+            sleeper(backoff_s)
+    last_result["retries_exhausted"] = max_attempts
+    return last_result
+
+
 def _parse_detail_menu_options(screen: str) -> dict[str, int]:
     """Parse a server-detail submenu and return label → 1-based row.
 
@@ -496,11 +560,31 @@ class _PtyChild:
         return False
 
     def reconnect_mcp(self, server_name: str) -> dict:
-        """Deterministically drive /mcp → select server → Reconnect.
+        """Deterministically drive /mcp → select server → Reconnect,
+        with bounded retry on transient polling failures.
 
-        Returns {"ok": bool, "server": str, "detail": str}. Meant to be
-        called from a background thread — writes to the pty and polls
-        the screen buffer with short sleeps between steps.
+        Wraps `_attempt_reconnect_mcp` in `_retry_reconnect_attempts` so
+        timing-dependent failures (dialog didn't open in time, detail
+        view didn't render, post-Reconnect failure marker on screen)
+        get up to 3 total attempts with 500ms backoff before bubbling
+        up. Non-transient failures (e.g. "server not found in dialog"
+        — a config issue) short-circuit without retrying. The total
+        worst-case latency stays under ~10s, matching the MCP
+        ``task=True`` window the orchestrator-side tool uses.
+
+        Returns {"ok": bool, "server": str, "detail": str}. May also
+        include `retries_used` (on success after at least one retry)
+        or `retries_exhausted` (when all attempts failed transiently).
+        Meant to be called from a background thread.
+        """
+        return _retry_reconnect_attempts(
+            lambda: self._attempt_reconnect_mcp(server_name),
+        )
+
+    def _attempt_reconnect_mcp(self, server_name: str) -> dict:
+        """One pass of the /mcp dialog driver. Public entry point is
+        ``reconnect_mcp``, which wraps this with retry-on-transient.
+        Returns the same shape — see ``reconnect_mcp`` for details.
         """
         if self._master_fd is None:
             return {"ok": False, "server": server_name, "detail": "no pty"}
