@@ -212,6 +212,41 @@ def test_dev_bootstrap_disabled_by_env(
     assert r.status_code in (403, 404)
 
 
+def test_dev_bootstrap_accepts_docker_bridge_gateway(
+    client: TestClient, secret: str, monkeypatch: pytest.MonkeyPatch
+):
+    """When the hub runs inside a container published as
+    127.0.0.1:8001:8001, host traffic enters with client.host set to the
+    docker bridge gateway IP (e.g. 172.19.0.1), not 127.0.0.1. The
+    exemption must widen to cover that case so the same-machine browser
+    flow still works through the port-forward.
+
+    TestClient's default client.host is "testclient", so we monkeypatch
+    the detector to return "testclient" — that's the same code path as
+    a real container with the gateway folded into the allowlist.
+    """
+    from tubemail_hub.bridge import api
+
+    monkeypatch.setattr(api, "_detect_docker_gateway", lambda: "testclient")
+    r = client.get("/api/dev-bootstrap")
+    assert r.status_code == 200, r.text
+    assert r.json()["bearer"] == secret
+
+
+def test_dev_bootstrap_no_gateway_still_rejects_non_loopback(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """When the gateway detector returns None (non-Linux test box, or
+    /proc/net/route unreadable), the allowlist falls back to the three
+    static entries. Existing reject behavior for "testclient" must hold.
+    """
+    from tubemail_hub.bridge import api
+
+    monkeypatch.setattr(api, "_detect_docker_gateway", lambda: None)
+    r = client.get("/api/dev-bootstrap")
+    assert r.status_code == 403
+
+
 # ── /api/pty-ticket ───────────────────────────────────────────────────────
 
 def test_api_pty_ticket_requires_auth(client: TestClient):

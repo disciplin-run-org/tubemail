@@ -28,6 +28,49 @@ from .tickets import TicketStore
 logger = logging.getLogger(__name__)
 
 
+def _detect_docker_gateway() -> str | None:
+    """Read /proc/net/route to find the container's default-gateway IPv4.
+
+    When the hub container is published as `127.0.0.1:8001:8001`, host
+    traffic enters via the docker bridge gateway, so `request.client.host`
+    inside the container is the gateway IP (e.g. `172.19.0.1`), not
+    `127.0.0.1`. Sibling containers on the same bridge always source from
+    their own container IPs, never the gateway — so folding the gateway
+    into the dev-bootstrap allowlist only widens the exemption to the
+    host port-forward path.
+
+    Returns `None` on non-Linux platforms or when `/proc/net/route` is
+    unreadable; callers fall back to the three static loopback entries.
+
+    Mirrors `_detect_docker_gateway` added to quartermaster in 3e604cb.
+    Both will collapse into `shared/security/auth_middleware.py` when
+    architrix-tm queue #356 lifts the helper into the shared layer.
+    """
+    try:
+        with open("/proc/net/route") as fh:
+            for line in fh.readlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 3 and parts[1] == "00000000":
+                    return ".".join(
+                        str(int(parts[2][i : i + 2], 16)) for i in (6, 4, 2, 0)
+                    )
+    except OSError:
+        pass
+    return None
+
+
+def _bootstrap_loopback_hosts() -> set[str]:
+    """Allowlist for the dev-bootstrap exemption: the three static
+    loopback entries plus the docker bridge gateway when detectable.
+    Re-evaluated per request so tests can monkeypatch the detector.
+    """
+    base = {"127.0.0.1", "::1", "localhost"}
+    gateway = _detect_docker_gateway()
+    if gateway:
+        base.add(gateway)
+    return base
+
+
 def build_api_router(
     engine: BridgeEngine,
     tickets: TicketStore | None = None,
@@ -64,8 +107,10 @@ def build_api_router(
                 detail="dev-bootstrap disabled",
             )
         client_host = request.client.host if request.client else ""
-        # IPv4 loopback, IPv6 loopback, or "localhost" hostname.
-        if client_host not in ("127.0.0.1", "::1", "localhost"):
+        # IPv4 loopback, IPv6 loopback, "localhost", or the docker
+        # bridge gateway when running inside a container (host
+        # port-forward traffic appears as the gateway IP, not 127.0.0.1).
+        if client_host not in _bootstrap_loopback_hosts():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="dev-bootstrap is loopback-only",
