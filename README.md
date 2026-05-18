@@ -119,6 +119,14 @@ rebuild on the host is live without a container rebuild.
    auto-loads it. The worker registers as `<dirname>-tm` and appears in
    the roster. Use `--role <name>` to run multiple workers per project.
 
+   On the first run in a project, claude-tm auto-creates a minimal
+   `./.mcp.json` containing a `tubemail-channel` entry so claude's
+   `--dangerously-load-development-channels` flag can resolve the
+   stdio channel. No secret is written to that file — it's a one-line
+   `{"command": "tubemail"}` entry; `TUBEMAIL_SECRET` is inherited
+   from claude-tm's env at spawn time. Set `TM_SKIP_MCP_BOOTSTRAP=1`
+   to manage `.mcp.json` yourself.
+
 4. **From an orchestrator session** (with the `tubemail` MCP server
    added to `.mcp.json`):
    ```python

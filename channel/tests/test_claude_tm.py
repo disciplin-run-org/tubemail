@@ -51,6 +51,162 @@ def test_resolve_session_name_with_role(tmp_path, monkeypatch):
     assert claude_tm._resolve_session_name("spec") == "leanspecs-spec-tm"
 
 
+def _read_mcp_json(path: Path) -> dict:
+    import json as _json
+    return _json.loads(path.read_text())
+
+
+def test_mcp_bootstrap_creates_file_when_absent(tmp_path, monkeypatch):
+    """A freshly-installed user (Andre's case): cwd has no .mcp.json,
+    user home has no .mcp.json. The bootstrap creates a minimal
+    .mcp.json in cwd registering `tubemail-channel` so claude's
+    `--dangerously-load-development-channels server:tubemail-channel`
+    flag can resolve it."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.delenv("TM_SKIP_MCP_BOOTSTRAP", raising=False)
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    assert written == str(project / ".mcp.json")
+    cfg = _read_mcp_json(project / ".mcp.json")
+    assert cfg["mcpServers"]["tubemail-channel"] == {"command": "tubemail"}
+
+
+def test_mcp_bootstrap_preserves_existing_servers(tmp_path, monkeypatch):
+    """A project that already has other MCP servers configured must keep
+    them — the bootstrap merges, never clobbers."""
+    import json as _json
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+
+    existing = {
+        "mcpServers": {
+            "leanspecs": {"type": "http", "url": "http://localhost:8003/mcp/"},
+        },
+    }
+    (project / ".mcp.json").write_text(_json.dumps(existing, indent=2))
+
+    claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    cfg = _read_mcp_json(project / ".mcp.json")
+    # The pre-existing entry survives untouched.
+    assert cfg["mcpServers"]["leanspecs"] == {
+        "type": "http",
+        "url": "http://localhost:8003/mcp/",
+    }
+    # And ours is added alongside.
+    assert cfg["mcpServers"]["tubemail-channel"] == {"command": "tubemail"}
+
+
+def test_mcp_bootstrap_skips_when_entry_already_present_in_project(
+    tmp_path, monkeypatch
+):
+    """Idempotency: a project .mcp.json that already lists tubemail-channel
+    must not be rewritten — even if the user customised the value."""
+    import json as _json
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+
+    original = {
+        "mcpServers": {
+            "tubemail-channel": {
+                "command": "/custom/path/to/tubemail",
+                "args": ["--verbose"],
+            },
+        },
+    }
+    (project / ".mcp.json").write_text(_json.dumps(original, indent=2))
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    assert written is None
+    # File contents unchanged — customised entry preserved verbatim.
+    assert _read_mcp_json(project / ".mcp.json") == original
+
+
+def test_mcp_bootstrap_skips_when_entry_in_user_home(tmp_path, monkeypatch):
+    """A user who already has a global ~/.mcp.json entry (Andre's manual
+    fix) shouldn't get a duplicate project-local entry — the global one
+    already satisfies claude's resolution."""
+    import json as _json
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+
+    (user_home / ".mcp.json").write_text(_json.dumps({
+        "mcpServers": {"tubemail-channel": {"command": "tubemail"}},
+    }))
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    assert written is None
+    # No project file was created.
+    assert not (project / ".mcp.json").exists()
+
+
+def test_mcp_bootstrap_respects_skip_env(tmp_path, monkeypatch):
+    """Power users who manage .mcp.json themselves can disable the
+    auto-registration with TM_SKIP_MCP_BOOTSTRAP=1."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("TM_SKIP_MCP_BOOTSTRAP", "1")
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    assert written is None
+    assert not (project / ".mcp.json").exists()
+
+
+def test_mcp_bootstrap_does_not_clobber_invalid_json(tmp_path, monkeypatch, capsys):
+    """If the project .mcp.json exists but isn't parseable, we MUST NOT
+    overwrite it — that would destroy whatever the user was editing.
+    Print actionable instructions instead."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+
+    broken = '{"mcpServers": { unfinished'
+    (project / ".mcp.json").write_text(broken)
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    assert written is None
+    # The broken file is preserved byte-for-byte.
+    assert (project / ".mcp.json").read_text() == broken
+    err = capsys.readouterr().err
+    assert "tubemail-channel" in err
+    assert "manually" in err.lower()
+
+
 def test_resolve_session_name_env_override_wins(tmp_path, monkeypatch):
     project = tmp_path / "leanspecs"
     project.mkdir()

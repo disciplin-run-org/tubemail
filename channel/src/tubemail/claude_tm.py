@@ -27,6 +27,9 @@ Environment::
     TM_FORCE=1             start even if the pidfile says we're already running.
     TM_MAX_CRASH_RESTARTS  default 5.
     TUBEMAIL_ENV_FILE      path to a KEY=value file sourced before run.
+    TM_SKIP_MCP_BOOTSTRAP=1  skip the auto-registration of the
+                           ``tubemail-channel`` MCP entry in ``.mcp.json``
+                           (for users who manage their MCP config externally).
 
 If ``TUBEMAIL_ENV_FILE`` is unset, claude-tm auto-loads (first hit wins,
 existing env vars are never overwritten):
@@ -40,6 +43,7 @@ existing env vars are never overwritten):
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -106,6 +110,129 @@ def _load_env_files() -> None:
         for k, v in _parse_env_file(cand).items():
             os.environ.setdefault(k, v)
         return
+
+
+def _has_tubemail_channel_entry(path: Path) -> bool:
+    """True iff ``path`` is a readable JSON object whose ``mcpServers``
+    map already contains a ``tubemail-channel`` key. Any read or parse
+    failure returns False (treat the file as if it had no entry)."""
+    try:
+        content = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(content, dict):
+        return False
+    servers = content.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    return "tubemail-channel" in servers
+
+
+def _ensure_mcp_channel_entry(
+    *,
+    project_root: Path | None = None,
+    user_home: Path | None = None,
+) -> str | None:
+    """Idempotently register the ``tubemail-channel`` MCP server in a
+    ``.mcp.json`` so claude's
+    ``--dangerously-load-development-channels server:tubemail-channel``
+    flag can resolve it.
+
+    The pip package installs the ``tubemail`` CLI on PATH but doesn't
+    register the MCP entry — without this bootstrap, a freshly-installed
+    user hits ``"no MCP server configured with that name"`` on the first
+    ``claude-tm`` invocation and has to hand-edit JSON. (Andre's first
+    run, 2026-05-17.)
+
+    Behavior:
+
+    - If the current project's ``./.mcp.json`` already lists the entry,
+      do nothing.
+    - If the user's ``~/.mcp.json`` already lists the entry, do nothing
+      (the global one already satisfies claude's resolution).
+    - Otherwise write ``{"command": "tubemail"}`` into a new or merged
+      ``./.mcp.json``. The entry is intentionally minimal — no
+      ``TUBEMAIL_SECRET`` or ``TUBEMAIL_HUB_URL`` in the ``env`` block —
+      so secrets are inherited from ``claude-tm``'s env at spawn time
+      and never land in a file that might be committed.
+    - If ``./.mcp.json`` exists but isn't a valid JSON object, refuse
+      to clobber it; print actionable instructions and return.
+
+    Set ``TM_SKIP_MCP_BOOTSTRAP=1`` to opt out entirely (for users who
+    manage their MCP config externally).
+
+    Returns the absolute path of the file written, or ``None`` if no
+    write was needed.
+    """
+    if os.environ.get("TM_SKIP_MCP_BOOTSTRAP", "").strip() == "1":
+        return None
+
+    project_root = project_root or Path.cwd()
+    user_home = user_home or Path.home()
+
+    project_path = project_root / ".mcp.json"
+    user_path = user_home / ".mcp.json"
+
+    # Already satisfied somewhere? Leave it alone — including any
+    # user-customised entry (different command, extra args) so we
+    # don't overwrite intentional tweaks.
+    if _has_tubemail_channel_entry(project_path):
+        return None
+    if _has_tubemail_channel_entry(user_path):
+        return None
+
+    # Merge into existing project file when possible; create when not.
+    existing: dict
+    if project_path.exists():
+        try:
+            parsed = json.loads(project_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            print(
+                f"claude-tm: {project_path} exists but isn't valid JSON; "
+                "skipping auto-registration to avoid clobbering your edits.",
+                file=sys.stderr,
+            )
+            print(
+                "  Add this entry to your .mcp.json manually so "
+                "claude-tm can resolve the channel:",
+                file=sys.stderr,
+            )
+            print(
+                '    "tubemail-channel": {"command": "tubemail"}',
+                file=sys.stderr,
+            )
+            return None
+        if not isinstance(parsed, dict):
+            print(
+                f"claude-tm: {project_path} is JSON but not an object; "
+                "skipping auto-registration. Add 'tubemail-channel' manually.",
+                file=sys.stderr,
+            )
+            return None
+        existing = parsed
+    else:
+        existing = {}
+
+    servers = existing.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        print(
+            f"claude-tm: {project_path}.mcpServers is not an object; "
+            "skipping auto-registration. Add 'tubemail-channel' manually.",
+            file=sys.stderr,
+        )
+        return None
+    servers["tubemail-channel"] = {"command": "tubemail"}
+
+    project_path.write_text(json.dumps(existing, indent=2) + "\n")
+    print(
+        f"claude-tm: registered 'tubemail-channel' MCP entry in {project_path}",
+        file=sys.stderr,
+    )
+    print(
+        "  (set TM_SKIP_MCP_BOOTSTRAP=1 to disable this auto-registration)",
+        file=sys.stderr,
+    )
+    return str(project_path)
 
 
 def _parse_args(argv: list[str]) -> tuple[str, list[str]]:
@@ -212,6 +339,8 @@ Environment:
   TM_FORCE=1             ignore an existing pidfile and start anyway.
   TM_MAX_CRASH_RESTARTS  default 5.
   TUBEMAIL_ENV_FILE      explicit path to a KEY=value file.
+  TM_SKIP_MCP_BOOTSTRAP=1  skip the auto-registration of the
+                         `tubemail-channel` MCP entry in `.mcp.json`.
 
 If TUBEMAIL_ENV_FILE is unset, claude-tm auto-loads `.env` walking up
 from cwd (cap: 5 parent levels), then ~/.config/tubemail/.env. Existing
@@ -235,6 +364,12 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Make sure the tubemail-channel MCP entry exists so claude's
+    # `--dangerously-load-development-channels server:tubemail-channel`
+    # flag (set by manager.py) can resolve the channel without a
+    # hand-edit. Idempotent; skipped when TM_SKIP_MCP_BOOTSTRAP=1.
+    _ensure_mcp_channel_entry()
 
     role, passthru = _parse_args(sys.argv[1:])
     session_name = _resolve_session_name(role)
