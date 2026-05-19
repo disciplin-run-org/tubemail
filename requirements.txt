@@ -1,6 +1,6 @@
 fastapi>=0.104
 uvicorn>=0.24
-fastmcp[tasks]>=2.14
+fastmcp>=2.14
 pydantic>=2.0
 httpx>=0.25
 sse-starlette>=2.0
