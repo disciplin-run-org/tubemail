@@ -90,6 +90,40 @@ async def _sweep_tickets(store: TicketStore) -> None:
         raise
 
 
+async def _periodic_sweep_pending_permissions(engine: BridgeEngine) -> None:
+    """Sweep stale pending permissions on every minute tick.
+
+    Three signals collaborate to keep `pending_permissions` clean (see
+    `_sweep_stale_for_worker` docstring for details):
+
+    1. Event-timeline path — a later outbound proves the gate resolved.
+       Fires inline on every `record_outbound`.
+    2. Connection-drop path — last SSE subscriber leaving clears the
+       queue. Fires in `subscribe`'s `finally` block.
+    3. Heartbeat-threshold path — worker silent past `_SWEEP_HEARTBEAT_S`
+       (15min default). Fires here, on every tick.
+
+    Without (3), a worker whose Claude session dies but whose forwarder
+    SSE subscription stays alive leaks pending entries forever — the
+    QM #416 incident on 2026-05-18.
+    """
+    log = logging.getLogger(__name__)
+    try:
+        while True:
+            await asyncio.sleep(60)
+            try:
+                results = await engine.sweep_stale_permissions_all()
+                if results:
+                    log.info(
+                        "periodic permission sweep: dropped %s",
+                        results,
+                    )
+            except Exception as e:
+                log.warning("periodic permission sweep failed: %s", e)
+    except asyncio.CancelledError:
+        raise
+
+
 async def _periodic_worker_purge(engine: BridgeEngine, max_age_s: float) -> None:
     """Drop stale offline workers every 10 minutes. Pairs with the
     startup purge so a long-running hub doesn't accumulate registry
@@ -192,10 +226,15 @@ def create_app() -> FastAPI:
                 )
         except Exception as e:
             logger.warning("startup purge failed: %s", e)
-        # Background tasks: ticket sweeper + periodic worker purge.
+        # Background tasks: ticket sweeper, periodic worker purge, and
+        # periodic pending-permission sweep (catches workers whose
+        # Claude session died but whose forwarder SSE is still alive).
         sweep_task = asyncio.create_task(_sweep_tickets(ticket_store))
         purge_task = asyncio.create_task(
             _periodic_worker_purge(engine, max_age)
+        )
+        permission_sweep_task = asyncio.create_task(
+            _periodic_sweep_pending_permissions(engine)
         )
         try:
             if mcp_asgi and getattr(mcp_asgi, "lifespan", None):
@@ -204,7 +243,7 @@ def create_app() -> FastAPI:
             else:
                 yield
         finally:
-            for t in (sweep_task, purge_task):
+            for t in (sweep_task, purge_task, permission_sweep_task):
                 t.cancel()
                 try:
                     await t

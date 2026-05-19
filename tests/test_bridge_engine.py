@@ -787,6 +787,61 @@ async def test_sweep_keeps_orphan_within_grace(engine: BridgeEngine):
     assert len(ws.pending_permissions) == 1
 
 
+async def test_sweep_drops_pending_after_heartbeat_silence(engine: BridgeEngine):
+    """Incident QM #416 (2026-05-18, architrix-tm): a worker fires a Bash
+    permission prompt and its Claude session goes stale before producing
+    any further outbound. The forwarder subscription stays alive (so the
+    connection-drop sweep can't fire), the request has no later outbound
+    (so the event-timeline sweep can't fire), and the prompt sits in
+    pending_permissions forever — visible as `waiting_permission` in the
+    web UI even though the worker is idle.
+
+    The heartbeat-threshold signal must drop the entry once the worker
+    has been silent for `_SWEEP_HEARTBEAT_S`. last_activity gets stuck
+    on the request itself (no later events), so `now - last_activity`
+    is effectively the request's age.
+    """
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="zombie", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    ws = engine._workers["w"]
+    # Push request_event AND last_activity past the heartbeat threshold.
+    # No outbound after — the event-timeline path can't drop this.
+    old_ts = ws.last_activity - (engine._SWEEP_HEARTBEAT_S + 60.0)
+    for ev in ws.events:
+        if ev.kind == "permission_request":
+            ev.ts = old_ts
+    ws.last_activity = old_ts
+    assert len(ws.pending_permissions) == 1
+
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 1
+    assert ws.pending_permissions == []
+
+
+async def test_sweep_keeps_pending_within_heartbeat(engine: BridgeEngine):
+    """A pending entry from inside the heartbeat window stays — the
+    worker may legitimately be blocked on a slow human-approval prompt.
+    Only entries past the threshold get the new sweep treatment."""
+    await engine.register_worker("w", "/")
+    payload = PermissionRequestPayload(request_id="fresh", tool_name="Bash")
+    await engine.record_permission_request("w", payload)
+    # No backdating — request and last_activity are both `now`, well
+    # within the heartbeat threshold.
+    dropped = await engine.sweep_stale_permissions("w")
+    assert dropped == 0
+    assert len(engine._workers["w"].pending_permissions) == 1
+
+
+async def test_sweep_heartbeat_constant_is_documented_minutes(engine: BridgeEngine):
+    """The default heartbeat threshold per QM #419's proposal is 15
+    minutes. Pin the constant so a future tweak doesn't silently
+    shorten the window for human-attended prompts (which the WO
+    explicitly carved out — "permission prompts that genuinely need an
+    answer sit pending for many minutes")."""
+    assert engine._SWEEP_HEARTBEAT_S == 900.0
+
+
 async def test_sweep_all_only_reports_workers_that_changed(engine: BridgeEngine):
     """The aggregated sweeper returns only workers where it actually
     dropped something — clean workers are omitted to keep the response

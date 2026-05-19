@@ -155,6 +155,17 @@ class BridgeEngine:
     # answer sit pending for many minutes.
     _SWEEP_GRACE_S = 60.0
 
+    # Heartbeat threshold: if a pending entry's matching event exists
+    # but the worker has produced NO activity at all in this window,
+    # the request is presumed orphaned. Catches the "worker silently
+    # died with the forwarder still subscribed" class (QM #416,
+    # 2026-05-18, architrix-tm) — the event-timeline path can't drop
+    # because no later outbound exists, and the connection-drop path
+    # can't fire because the SSE forwarder is still attached. 15min
+    # is conservative for human-attended prompts that legitimately
+    # take a few minutes to answer.
+    _SWEEP_HEARTBEAT_S = 900.0
+
     def _sweep_stale_for_worker(
         self, name: str, *, now: float | None = None, persist: bool = True
     ) -> int:
@@ -215,6 +226,13 @@ class BridgeEngine:
                 kept.append(p)
                 continue
             if latest_proof_ts > req_ts and (now - req_ts) > self._SWEEP_GRACE_S:
+                dropped += 1
+                continue
+            # Heartbeat threshold: no event of any kind from this worker
+            # for too long. The forwarder may still be subscribed (so
+            # the connection-drop sweep can't fire), but the Claude
+            # session inside it has stopped responding. Drop the orphan.
+            if ws.last_activity and (now - ws.last_activity) > self._SWEEP_HEARTBEAT_S:
                 dropped += 1
                 continue
             kept.append(p)

@@ -492,21 +492,37 @@ def register(mcp, engine: BridgeEngine) -> None:
     async def tm_sweep_stale_permissions(
         worker: str | None = None,
     ) -> dict[str, Any]:
-        """Drop pending_permission entries that the event timeline proves
-        were resolved.
+        """Drop pending_permission entries that have gone stale.
 
-        Without this, a hub blip at the moment a permission gets answered
-        locally leaves the entry stuck on the hub — the LLM proceeds, the
-        worker keeps producing outbound events, but `tm_status` keeps
-        reporting `state="waiting_permission"` forever. The sweeper drops
-        any pending entry where a worker outbound event (Stop relay, ack,
-        explicit reply) was recorded strictly after the request's ts.
+        Three independent staleness signals, each catching a different
+        failure class:
 
-        Pass `worker` to sweep one specific worker, or omit to sweep every
-        known worker. Returns `{swept: {<worker>: <count>}, total: <int>}`
-        — only workers where at least one entry was dropped appear in
-        `swept`. The hub also runs the sweeper at startup, so a routine
-        restart heals stuck entries automatically.
+        1. **Event-timeline path** — a worker outbound event (Stop
+           relay, ack, explicit reply) recorded strictly AFTER a
+           pending request's timestamp proves the gate resolved
+           locally (an LLM can't produce output while blocked on a
+           permission prompt). Catches the "hub blip lost the resolve
+           event" class.
+        2. **Connection-drop path** — when a worker's last SSE
+           subscriber leaves without a re-registration, every pending
+           entry is cleared (`subscribe()`'s `finally` block in the
+           bridge engine). Catches the "claude-tm restarted, channel
+           reconnected with empty local pending" class.
+        3. **Heartbeat threshold** — if a request's matching event
+           exists but the worker has produced NO event for
+           `_SWEEP_HEARTBEAT_S` (15 min default), the entry is
+           presumed orphaned. Catches the "Claude session went stale
+           while the forwarder subscription stayed alive" class
+           (QM #416, 2026-05-18).
+
+        Pass `worker` to sweep one specific worker, or omit to sweep
+        every known worker. Returns
+        `{swept: {<worker>: <count>}, total: <int>}` — only workers
+        where at least one entry was dropped appear in `swept`. The
+        hub also runs this sweep at startup AND on every minute tick
+        (`_periodic_sweep_pending_permissions` in `server.py`), so
+        recovery time is bounded to ~60s even without operator
+        intervention.
         """
         if worker is not None:
             n = await engine.sweep_stale_permissions(worker)
