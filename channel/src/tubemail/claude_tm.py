@@ -133,8 +133,8 @@ def _ensure_mcp_channel_entry(
     project_root: Path | None = None,
     user_home: Path | None = None,
 ) -> str | None:
-    """Idempotently register the ``tubemail-channel`` MCP server in a
-    ``.mcp.json`` so claude's
+    """Idempotently register the ``tubemail-channel`` MCP server in
+    ``~/.mcp.json`` so claude's
     ``--dangerously-load-development-channels server:tubemail-channel``
     flag can resolve it.
 
@@ -144,18 +144,28 @@ def _ensure_mcp_channel_entry(
     ``claude-tm`` invocation and has to hand-edit JSON. (Andre's first
     run, 2026-05-17.)
 
+    **Write target**: user-global ``~/.mcp.json``, NOT project-local
+    ``./.mcp.json``. The earlier version of this bootstrap wrote into
+    the project file, which dirtied the git tree of every consumer repo
+    in the ecosystem (QM #430, 2026-05-20 — leanspecs-spec-tm flagged a
+    persistent ``M .mcp.json`` showing up in audits across leanspecs,
+    iris-qa, quartermaster, architrix, actuatrix). User-global keeps
+    consumer repos clean and matches what Andre did manually on first
+    install.
+
     Behavior:
 
     - If the current project's ``./.mcp.json`` already lists the entry,
-      do nothing.
-    - If the user's ``~/.mcp.json`` already lists the entry, do nothing
-      (the global one already satisfies claude's resolution).
+      do nothing (legacy migration: workers that ran the old wrapper
+      have the entry in their project file; we respect what's there
+      rather than duplicate-register).
+    - If ``~/.mcp.json`` already lists the entry, do nothing.
     - Otherwise write ``{"command": "tubemail"}`` into a new or merged
-      ``./.mcp.json``. The entry is intentionally minimal — no
+      ``~/.mcp.json``. The entry is intentionally minimal — no
       ``TUBEMAIL_SECRET`` or ``TUBEMAIL_HUB_URL`` in the ``env`` block —
       so secrets are inherited from ``claude-tm``'s env at spawn time
-      and never land in a file that might be committed.
-    - If ``./.mcp.json`` exists but isn't a valid JSON object, refuse
+      and never land in a file.
+    - If ``~/.mcp.json`` exists but isn't a valid JSON object, refuse
       to clobber it; print actionable instructions and return.
 
     Set ``TM_SKIP_MCP_BOOTSTRAP=1`` to opt out entirely (for users who
@@ -175,25 +185,27 @@ def _ensure_mcp_channel_entry(
 
     # Already satisfied somewhere? Leave it alone — including any
     # user-customised entry (different command, extra args) so we
-    # don't overwrite intentional tweaks.
+    # don't overwrite intentional tweaks. The project-local check is
+    # for legacy compatibility: workers that ran the old wrapper have
+    # the entry there; respect it rather than duplicate-register.
     if _has_tubemail_channel_entry(project_path):
         return None
     if _has_tubemail_channel_entry(user_path):
         return None
 
-    # Merge into existing project file when possible; create when not.
+    # Merge into existing user file when possible; create when not.
     existing: dict
-    if project_path.exists():
+    if user_path.exists():
         try:
-            parsed = json.loads(project_path.read_text())
+            parsed = json.loads(user_path.read_text())
         except (OSError, json.JSONDecodeError):
             print(
-                f"claude-tm: {project_path} exists but isn't valid JSON; "
+                f"claude-tm: {user_path} exists but isn't valid JSON; "
                 "skipping auto-registration to avoid clobbering your edits.",
                 file=sys.stderr,
             )
             print(
-                "  Add this entry to your .mcp.json manually so "
+                "  Add this entry to your ~/.mcp.json manually so "
                 "claude-tm can resolve the channel:",
                 file=sys.stderr,
             )
@@ -204,7 +216,7 @@ def _ensure_mcp_channel_entry(
             return None
         if not isinstance(parsed, dict):
             print(
-                f"claude-tm: {project_path} is JSON but not an object; "
+                f"claude-tm: {user_path} is JSON but not an object; "
                 "skipping auto-registration. Add 'tubemail-channel' manually.",
                 file=sys.stderr,
             )
@@ -216,23 +228,23 @@ def _ensure_mcp_channel_entry(
     servers = existing.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
         print(
-            f"claude-tm: {project_path}.mcpServers is not an object; "
+            f"claude-tm: {user_path}.mcpServers is not an object; "
             "skipping auto-registration. Add 'tubemail-channel' manually.",
             file=sys.stderr,
         )
         return None
     servers["tubemail-channel"] = {"command": "tubemail"}
 
-    project_path.write_text(json.dumps(existing, indent=2) + "\n")
+    user_path.write_text(json.dumps(existing, indent=2) + "\n")
     print(
-        f"claude-tm: registered 'tubemail-channel' MCP entry in {project_path}",
+        f"claude-tm: registered 'tubemail-channel' MCP entry in {user_path}",
         file=sys.stderr,
     )
     print(
         "  (set TM_SKIP_MCP_BOOTSTRAP=1 to disable this auto-registration)",
         file=sys.stderr,
     )
-    return str(project_path)
+    return str(user_path)
 
 
 def _parse_args(argv: list[str]) -> tuple[str, list[str]]:

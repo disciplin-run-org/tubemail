@@ -56,12 +56,11 @@ def _read_mcp_json(path: Path) -> dict:
     return _json.loads(path.read_text())
 
 
-def test_mcp_bootstrap_creates_file_when_absent(tmp_path, monkeypatch):
-    """A freshly-installed user (Andre's case): cwd has no .mcp.json,
-    user home has no .mcp.json. The bootstrap creates a minimal
-    .mcp.json in cwd registering `tubemail-channel` so claude's
-    `--dangerously-load-development-channels server:tubemail-channel`
-    flag can resolve it."""
+def test_mcp_bootstrap_writes_to_user_home(tmp_path, monkeypatch):
+    """Fresh install (Andre's case): no .mcp.json anywhere. The bootstrap
+    writes the entry to `~/.mcp.json` (user-global) — NOT to the project
+    cwd. Writing into the project file would dirty the git tree of every
+    consumer repo across the ecosystem (QM #430)."""
     project = tmp_path / "proj"
     project.mkdir()
     user_home = tmp_path / "home"
@@ -73,14 +72,48 @@ def test_mcp_bootstrap_creates_file_when_absent(tmp_path, monkeypatch):
         project_root=project, user_home=user_home
     )
 
-    assert written == str(project / ".mcp.json")
-    cfg = _read_mcp_json(project / ".mcp.json")
+    assert written == str(user_home / ".mcp.json")
+    cfg = _read_mcp_json(user_home / ".mcp.json")
     assert cfg["mcpServers"]["tubemail-channel"] == {"command": "tubemail"}
+    # Project file is NOT created — the whole point of QM #430's fix.
+    assert not (project / ".mcp.json").exists()
 
 
-def test_mcp_bootstrap_preserves_existing_servers(tmp_path, monkeypatch):
-    """A project that already has other MCP servers configured must keep
-    them — the bootstrap merges, never clobbers."""
+def test_mcp_bootstrap_leaves_project_mcp_json_untouched(tmp_path, monkeypatch):
+    """When the project already has its own canonical `.mcp.json` (e.g.
+    leanspecs's `leanspecs` block), the bootstrap must NOT mutate it.
+    The dirty-tree symptom that QM #430 surfaced was every consumer repo
+    showing `M .mcp.json` forever — the fix is to write user-global
+    only, never project-local."""
+    import json as _json
+    project = tmp_path / "proj"
+    project.mkdir()
+    user_home = tmp_path / "home"
+    user_home.mkdir()
+    monkeypatch.chdir(project)
+
+    project_original = {
+        "mcpServers": {
+            "leanspecs": {"type": "http", "url": "http://localhost:8003/mcp/"},
+        },
+    }
+    (project / ".mcp.json").write_text(_json.dumps(project_original, indent=2))
+
+    written = claude_tm._ensure_mcp_channel_entry(
+        project_root=project, user_home=user_home
+    )
+
+    # Wrote to user-global.
+    assert written == str(user_home / ".mcp.json")
+    # Project file is byte-identical to what we seeded — git would see
+    # no diff. This is the regression test for QM #430.
+    assert _read_mcp_json(project / ".mcp.json") == project_original
+
+
+def test_mcp_bootstrap_preserves_existing_servers_in_user_home(tmp_path, monkeypatch):
+    """A user who already has other servers in `~/.mcp.json` must keep
+    them — the bootstrap merges tubemail-channel alongside, never
+    clobbers."""
     import json as _json
     project = tmp_path / "proj"
     project.mkdir()
@@ -90,22 +123,19 @@ def test_mcp_bootstrap_preserves_existing_servers(tmp_path, monkeypatch):
 
     existing = {
         "mcpServers": {
-            "leanspecs": {"type": "http", "url": "http://localhost:8003/mcp/"},
+            "other-tool": {"command": "some-other-mcp"},
         },
     }
-    (project / ".mcp.json").write_text(_json.dumps(existing, indent=2))
+    (user_home / ".mcp.json").write_text(_json.dumps(existing, indent=2))
 
     claude_tm._ensure_mcp_channel_entry(
         project_root=project, user_home=user_home
     )
 
-    cfg = _read_mcp_json(project / ".mcp.json")
-    # The pre-existing entry survives untouched.
-    assert cfg["mcpServers"]["leanspecs"] == {
-        "type": "http",
-        "url": "http://localhost:8003/mcp/",
-    }
-    # And ours is added alongside.
+    cfg = _read_mcp_json(user_home / ".mcp.json")
+    # Pre-existing user entry survives untouched.
+    assert cfg["mcpServers"]["other-tool"] == {"command": "some-other-mcp"}
+    # Ours added alongside.
     assert cfg["mcpServers"]["tubemail-channel"] == {"command": "tubemail"}
 
 
@@ -179,13 +209,15 @@ def test_mcp_bootstrap_respects_skip_env(tmp_path, monkeypatch):
     )
 
     assert written is None
+    # Neither file gets created when skip is set.
     assert not (project / ".mcp.json").exists()
+    assert not (user_home / ".mcp.json").exists()
 
 
 def test_mcp_bootstrap_does_not_clobber_invalid_json(tmp_path, monkeypatch, capsys):
-    """If the project .mcp.json exists but isn't parseable, we MUST NOT
-    overwrite it — that would destroy whatever the user was editing.
-    Print actionable instructions instead."""
+    """If `~/.mcp.json` exists but isn't parseable, we MUST NOT overwrite
+    it — that would destroy whatever the user was editing. Print
+    actionable instructions and leave the file intact."""
     project = tmp_path / "proj"
     project.mkdir()
     user_home = tmp_path / "home"
@@ -193,7 +225,7 @@ def test_mcp_bootstrap_does_not_clobber_invalid_json(tmp_path, monkeypatch, caps
     monkeypatch.chdir(project)
 
     broken = '{"mcpServers": { unfinished'
-    (project / ".mcp.json").write_text(broken)
+    (user_home / ".mcp.json").write_text(broken)
 
     written = claude_tm._ensure_mcp_channel_entry(
         project_root=project, user_home=user_home
@@ -201,7 +233,7 @@ def test_mcp_bootstrap_does_not_clobber_invalid_json(tmp_path, monkeypatch, caps
 
     assert written is None
     # The broken file is preserved byte-for-byte.
-    assert (project / ".mcp.json").read_text() == broken
+    assert (user_home / ".mcp.json").read_text() == broken
     err = capsys.readouterr().err
     assert "tubemail-channel" in err
     assert "manually" in err.lower()
