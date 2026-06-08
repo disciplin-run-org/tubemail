@@ -66,8 +66,9 @@ code, pre {
 .sidebar {
   width: 200px;
   min-width: 200px;
-  background: var(--bg-elevated);
-  border-right: 1px solid var(--border);
+  /* Brand Identity: TubeMail sidebar color (design spec infrastructure:1.1.1) */
+  background: #5b1a2b;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
   display: flex;
   flex-direction: column;
   padding: 1rem 0;
@@ -77,8 +78,8 @@ code, pre {
   padding: 0 1rem 1rem;
   font-weight: 700;
   font-size: 1.1rem;
-  color: var(--text-strong);
-  border-bottom: 1px solid var(--border);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   margin-bottom: 0.5rem;
 }
 
@@ -95,7 +96,7 @@ code, pre {
 .sidebar-item {
   padding: 0.5rem 1rem;
   cursor: pointer;
-  color: var(--gray-500);
+  color: rgba(255, 255, 255, 0.75);
   border-left: 3px solid transparent;
   font-size: 0.85rem;
   display: flex;
@@ -104,12 +105,12 @@ code, pre {
   justify-content: space-between;
 }
 
-.sidebar-item:hover { background: var(--gray-100); color: var(--text); }
+.sidebar-item:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
 .sidebar-item.active {
-  color: var(--primary);
-  border-left-color: var(--primary);
+  color: #fff;
+  border-left-color: #fff;
   font-weight: 600;
-  background: var(--bg);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* Optional count badge — used by the Permissions tab. Style matches
