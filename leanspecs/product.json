@@ -2,6 +2,8 @@
   "product": "TubeMail",
   "description": "TubeMail \u2014 MCP orchestration hub, spec imported from source.",
   "schema_version": 1,
+  "id_prefix": "TM",
+  "next_stable_seq": 179,
   "okrs": [
     {
       "id": "Q2-2026",
@@ -81,6 +83,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-3",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -95,6 +98,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-4",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -109,6 +113,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-5",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -116,6 +121,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-2",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -137,6 +143,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-7",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -151,6 +158,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-8",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -165,6 +173,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-9",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -172,11 +181,13 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-6",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-1",
           "kano_level": 2,
           "gherkin": "Rule: Every core transport tool must address a worker by name and return a structured result on success and on failure.",
           "okr_kr": "Q2-2026/KR1"
@@ -208,6 +219,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-12",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -222,6 +234,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-13",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -236,6 +249,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-14",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -243,6 +257,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-11",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -264,6 +279,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-16",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -278,6 +294,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-17",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -292,6 +309,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-18",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -299,6 +317,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-15",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -320,6 +339,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-20",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -334,6 +354,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-21",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -348,6 +369,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-22",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -355,6 +377,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-19",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -376,6 +399,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-24",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -390,6 +414,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-25",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -404,6 +429,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-26",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -411,6 +437,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-23",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -432,6 +459,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-28",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -446,6 +474,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-29",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -460,6 +489,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-30",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -467,6 +497,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-27",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -488,6 +519,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-32",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -502,6 +534,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-33",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -516,6 +549,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-34",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -523,6 +557,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-31",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -544,6 +579,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-36",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -558,6 +594,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-37",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -572,6 +609,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-38",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -579,6 +617,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-35",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -600,6 +639,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-40",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -614,6 +654,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-41",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -628,6 +669,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-42",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -635,6 +677,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-39",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -656,6 +699,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-44",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -670,6 +714,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-45",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -684,6 +729,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-46",
                   "kano_level": 3,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -691,11 +737,13 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-43",
               "kano_level": 3,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-10",
           "kano_level": 3,
           "gherkin": "Rule: Auxiliary tools must leave worker state consistent if they fail mid-operation, never half-applying a lifecycle change.",
           "okr_kr": "Q2-2026/KR1"
@@ -727,6 +775,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-49",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -741,6 +790,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-50",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -748,6 +798,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-48",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -769,6 +820,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-52",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -783,6 +835,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-53",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -797,6 +850,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-54",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -804,6 +858,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-51",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -825,6 +880,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-56",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -839,6 +895,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-57",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -853,6 +910,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-58",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -860,6 +918,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-55",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -881,6 +940,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-60",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -895,6 +955,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-61",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -909,6 +970,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-62",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -916,6 +978,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-59",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -937,6 +1000,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-64",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -951,6 +1015,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-65",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -965,6 +1030,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-66",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -972,6 +1038,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-63",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -993,6 +1060,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-68",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1000,6 +1068,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-67",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1021,6 +1090,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-70",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1035,6 +1105,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-71",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -1049,6 +1120,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-72",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -1056,6 +1128,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-69",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1077,6 +1150,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-74",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1091,6 +1165,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-75",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -1105,6 +1180,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-76",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -1112,6 +1188,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-73",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1133,6 +1210,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-78",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1147,6 +1225,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-79",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -1161,6 +1240,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-80",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -1168,6 +1248,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-77",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1181,6 +1262,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-81",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1202,6 +1284,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-83",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1216,6 +1299,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-84",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -1230,6 +1314,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-85",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -1237,6 +1322,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-82",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -1258,6 +1344,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-87",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 0,
@@ -1272,6 +1359,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-88",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 1,
@@ -1286,6 +1374,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-89",
                   "kano_level": 4,
                   "okr_kr": "Q2-2026/KR3",
                   "lifecycle_order": 2,
@@ -1293,11 +1382,13 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-86",
               "kano_level": 4,
               "okr_kr": "Q2-2026/KR3"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-47",
           "kano_level": 4,
           "gherkin": "Rule: Performance tools must report a quantitative reading or a concrete recovery outcome, never a silent best-effort.",
           "okr_kr": "Q2-2026/KR3"
@@ -1329,6 +1420,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-92",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1343,6 +1435,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-93",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1357,6 +1450,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-94",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1364,6 +1458,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-91",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1385,6 +1480,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-96",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1399,6 +1495,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-97",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1413,6 +1510,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-98",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1420,6 +1518,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-95",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1441,6 +1540,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-100",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1455,6 +1555,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-101",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1469,6 +1570,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-102",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1476,6 +1578,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-99",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1497,6 +1600,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-104",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1511,6 +1615,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-105",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1525,6 +1630,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-106",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1532,6 +1638,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-103",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1553,6 +1660,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-108",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1567,6 +1675,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-109",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1581,6 +1690,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-110",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1588,6 +1698,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-107",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1609,6 +1720,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-112",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1623,6 +1735,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-113",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1637,6 +1750,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-114",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1644,6 +1758,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-111",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1665,6 +1780,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-116",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1679,6 +1795,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-117",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1693,6 +1810,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-118",
                   "kano_level": 5,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1700,11 +1818,13 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-115",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-90",
           "kano_level": 5,
           "gherkin": "Rule: Bells-and-whistles tools must add convenience without becoming the only path to a core action.",
           "okr_kr": "Q2-2026/KR1"
@@ -1736,6 +1856,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-121",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1750,6 +1871,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-122",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1764,6 +1886,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-123",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1771,6 +1894,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-120",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1792,6 +1916,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-125",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1806,6 +1931,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-126",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1820,6 +1946,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-127",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1827,6 +1954,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-124",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1848,6 +1976,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-129",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1862,6 +1991,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-130",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1876,6 +2006,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-131",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1883,6 +2014,7 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-128",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -1904,6 +2036,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-133",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 0,
@@ -1918,6 +2051,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-134",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 1,
@@ -1932,6 +2066,7 @@
                   "gherkin": "",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-135",
                   "kano_level": 2,
                   "okr_kr": "Q2-2026/KR1",
                   "lifecycle_order": 2,
@@ -1939,11 +2074,13 @@
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-132",
               "kano_level": 2,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-119",
           "kano_level": 2,
           "gherkin": "Rule: Foundation tools must answer without workspace identity and within the standard tool-call timeout.",
           "okr_kr": "Q2-2026/KR1"
@@ -1988,6 +2125,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-137",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2001,11 +2139,13 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-138",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-136",
           "kano_level": 5,
           "gherkin": "Rule: Every core transport tool must address a worker by name and return a structured result on success and on failure.",
           "okr_kr": "Q2-2026/KR1"
@@ -2029,6 +2169,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-140",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2042,6 +2183,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-141",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2055,6 +2197,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-142",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2068,6 +2211,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-143",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2081,6 +2225,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-144",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2094,6 +2239,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-145",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2107,6 +2253,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-146",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2120,6 +2267,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-147",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2133,11 +2281,13 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-148",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-139",
           "kano_level": 5,
           "gherkin": "Rule: Auxiliary tools must leave worker state consistent if they fail mid-operation, never half-applying a lifecycle change.",
           "okr_kr": "Q2-2026/KR1"
@@ -2161,6 +2311,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-150",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2174,6 +2325,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-151",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2187,6 +2339,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-152",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2200,6 +2353,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-153",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2213,6 +2367,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-154",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2226,6 +2381,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-155",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2239,6 +2395,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-156",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2252,6 +2409,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-157",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2265,6 +2423,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-158",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2278,6 +2437,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-159",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2291,6 +2451,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-160",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             },
@@ -2304,11 +2465,13 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-161",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR3"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-149",
           "kano_level": 5,
           "gherkin": "Rule: Performance tools must report a quantitative reading or a concrete recovery outcome, never a silent best-effort.",
           "okr_kr": "Q2-2026/KR3"
@@ -2332,6 +2495,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-163",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2345,6 +2509,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-164",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2358,6 +2523,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-165",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2371,6 +2537,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-166",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2384,6 +2551,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-167",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2397,6 +2565,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-168",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2410,11 +2579,13 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-169",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-162",
           "kano_level": 5,
           "gherkin": "Rule: Bells-and-whistles tools must add convenience without becoming the only path to a core action.",
           "okr_kr": "Q2-2026/KR1"
@@ -2438,6 +2609,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-171",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2451,6 +2623,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-172",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2464,6 +2637,7 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-173",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             },
@@ -2477,11 +2651,13 @@
               "release_threshold": 75.0,
               "behaviors": [],
               "deleted": false,
+              "stable_id": "TM-174",
               "kano_level": 5,
               "okr_kr": "Q2-2026/KR1"
             }
           ],
           "deleted": false,
+          "stable_id": "TM-170",
           "kano_level": 5,
           "gherkin": "Rule: Foundation tools must answer without workspace identity and within the standard tool-call timeout.",
           "okr_kr": "Q2-2026/KR1"
@@ -2534,6 +2710,7 @@
                   "gherkin": "Scenario: TubeMail sidebar color\n  Given the TubeMail SPA renders its left menu\n  Then the sidebar background color is #5b1a2b",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-177",
                   "kano_level": 5,
                   "deleted": false
                 },
@@ -2546,16 +2723,19 @@
                   "gherkin": "Scenario: TubeMail favicon concept word\n  Given the TubeMail design specs\n  Then the favicon concept word is \"envelope\"",
                   "status": "draft",
                   "test_scope": "functional",
+                  "stable_id": "TM-178",
                   "kano_level": 5,
                   "deleted": false
                 }
               ],
               "deleted": false,
+              "stable_id": "TM-176",
               "kano_level": 5,
               "gherkin": "Rule: Each app declares its sidebar color and favicon concept word as design-spec values in this feature \u2014 not as ref parameters."
             }
           ],
-          "deleted": false
+          "deleted": false,
+          "stable_id": "TM-175"
         }
       ]
     },
