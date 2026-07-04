@@ -223,6 +223,88 @@ def _contains_rate_limit(tail: bytes) -> bool:
     return _RATE_LIMIT_MARKER in _normalize_pty_tail(tail)
 
 
+# Post-fresh-restart auto-catchup — how long to wait for the child's
+# empty prompt to appear before giving up on typing /sync-inbox. Also
+# how long to settle at the prompt after the readiness marker fires,
+# so we don't race Claude Code's own startup /rename write.
+_SYNC_INBOX_WAIT_S = 45.0
+_SYNC_INBOX_SETTLE_S = 2.0
+
+
+def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
+    """After a fresh restart, wait for the child's empty prompt and then
+    type ``/sync-inbox`` into the pty.
+
+    A fresh restart drops all conversation context, so anything that
+    landed on the worker's timeline in the seconds before the restart
+    (QM review reminders, pending permission responses, follow-up work
+    orders) is invisible to the new session. Typing ``/sync-inbox``
+    after startup makes the fresh session bootstrap itself from the
+    timeline instead of sitting idle at an empty prompt.
+
+    Runs in a daemon thread so pump_io keeps servicing the pty. The
+    thread exits either after typing the command, on timeout, or if the
+    pty vanishes mid-wait (crash / operator kill). One-shot: the caller
+    is responsible for only invoking this on the fresh cycle.
+    """
+
+    def _run() -> None:
+        try:
+            ready = child._wait_for_screen(
+                _screen_looks_ready, timeout_s=_SYNC_INBOX_WAIT_S
+            )
+        except Exception as e:
+            logger.warning(
+                "post-fresh /sync-inbox wait failed for %s: %s", session_name, e
+            )
+            return
+        if not ready:
+            logger.warning(
+                "post-fresh /sync-inbox: worker '%s' prompt never signaled ready "
+                "within %.0fs — skipping auto-catchup",
+                session_name,
+                _SYNC_INBOX_WAIT_S,
+            )
+            return
+        # Settle: the readiness marker fires the instant the status bar
+        # first renders context%; give claude another beat to finish any
+        # in-flight startup writes (its own /rename) before we send.
+        time.sleep(_SYNC_INBOX_SETTLE_S)
+        try:
+            child.send_command("/sync-inbox")
+            logger.info("post-fresh /sync-inbox typed into worker '%s'", session_name)
+        except Exception as e:
+            logger.warning(
+                "post-fresh /sync-inbox send failed for %s: %s", session_name, e
+            )
+
+    threading.Thread(
+        target=_run, name=f"sync-inbox-{session_name}", daemon=True
+    ).start()
+
+
+def _screen_looks_ready(screen_text: str) -> bool:
+    """True when Claude Code's TUI has finished booting and is at the
+    empty prompt — the moment when it's safe to type a message like
+    ``/sync-inbox`` without landing in a startup dialog or an in-flight
+    turn.
+
+    The heuristic: the "context N%" status-bar indicator only renders
+    once claude has finished its startup sequence (dev-channels warning,
+    MCP-server load, resume prompt if any, initial /rename) AND is not
+    currently running a turn. So its presence is a reliable "prompt is
+    ready" signal. We reuse the same regex ``_parse_context_pct`` uses
+    for the periodic context-pct heartbeat — one marker, one source of
+    truth.
+
+    Kept as a pure function so the fresh-restart auto-catchup unit tests
+    can pin the exact string patterns that count as ready.
+    """
+    if not screen_text:
+        return False
+    return _parse_context_pct(screen_text.encode("utf-8", errors="replace")) is not None
+
+
 def _rate_limit_delay(retry_count: int) -> int:
     """Pick the backoff delay for the Nth consecutive rate-limit retry."""
     idx = min(retry_count, len(_RATE_LIMIT_BACKOFF_S) - 1)
@@ -1986,6 +2068,9 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
             child = _PtyChild(cmd, session_name=session_name)
             _current_child = child
             child.start()
+
+            if was_fresh:
+                _spawn_post_fresh_sync_inbox(child, session_name)
 
             if listener:
                 listener.set_child(child)

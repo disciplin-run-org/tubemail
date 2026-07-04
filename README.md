@@ -216,7 +216,7 @@ restarts under `<data>/hub-config.json`.
 | `tm_pending_permissions` | List tool-approval prompts across workers |
 | `tm_respond_permission` | Allow / deny a pending permission |
 | **Process control** | |
-| `tm_restart` | Clean restart via `/exit` + `--continue` (pass `fresh=true` to restart WITHOUT `--continue` — recovers identity via the startup `/rename`; one-shot) |
+| `tm_restart` | Clean restart via `/exit` + `--continue` (pass `fresh=true` to restart WITHOUT `--continue` — recovers identity via the startup `/rename` and the manager also auto-types `/sync-inbox` once the fresh prompt is ready; one-shot) |
 | `tm_stop` | Kill a worker |
 | `tm_purge_worker` | Remove a worker's registry entry |
 | `tm_keystroke` | Send raw keystrokes to a worker's pty |

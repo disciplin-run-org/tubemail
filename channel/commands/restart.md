@@ -56,7 +56,10 @@ same manager loop reverts to `--continue`.
      restart." (default), or
    - "Fresh restart signal sent. The manager will type /exit and restart the
      session WITHOUT --continue, so the startup /rename runs and the worker
-     re-registers with a clean conversation." (fresh).
+     re-registers with a clean conversation. Once the new prompt is ready
+     the manager will also auto-type /sync-inbox, so the fresh session
+     catches up on any timeline events that arrived during the restart
+     window instead of sitting idle." (fresh).
 
 4. **Do nothing else.** The manager handles the actual exit and restart. Do NOT
    try to run /exit yourself — the manager types it for you via the pty.
@@ -67,9 +70,15 @@ same manager loop reverts to `--continue`.
   with code 0. The manager sees the restart flag and restarts (with or without
   `--continue`, depending on the fresh flag).
 - After restart, re-read CLAUDE.md and check for new tools with `refresh_tools()`.
-- After restart, run `/sync-inbox` to catch any tubemail messages that arrived
-  during the restart window — the channel plugin's SSE subscription was briefly
-  down and doesn't replay missed events.
+- After a DEFAULT restart, run `/sync-inbox` yourself to catch any tubemail
+  messages that arrived during the restart window — the channel plugin's SSE
+  subscription was briefly down and doesn't replay missed events.
+- After a FRESH restart, the manager auto-types `/sync-inbox` for you once
+  the child's empty prompt is ready (detected via the status-bar "context N%"
+  marker, then a short settle delay). The auto-catchup is scoped to the
+  fresh cycle only; default and crash-recovery restarts do NOT auto-type it.
+  On timeout (rare — child never reaches the ready prompt) the manager logs
+  a warning and skips rather than typing into a startup dialog.
 - The fresh flag only affects the very next restart cycle. If the worker then
   crashes and the manager restarts it a second time, that second restart uses
   `--continue` (crash recovery is unchanged).

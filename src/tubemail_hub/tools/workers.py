@@ -567,7 +567,12 @@ def register(mcp, engine: BridgeEngine) -> None:
         etc.): the manager omits `--continue` for exactly one restart
         cycle, so the child gets a fresh conversation and the startup
         sequence types the automatic /rename to re-register cleanly.
-        Subsequent crash-recovery restarts revert to `--continue`.
+        Once the child's empty prompt is ready the manager also auto-types
+        `/sync-inbox` so the fresh session catches up on any timeline
+        events that arrived during the restart window (missed work orders,
+        pending QM items) instead of sitting idle at an empty prompt.
+        Subsequent crash-recovery restarts revert to `--continue` and
+        skip the auto-catchup.
 
         For a polite restart (when Claude IS responsive), send a tubemail
         message asking it to run the `/restart` skill instead.
