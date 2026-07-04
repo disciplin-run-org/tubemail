@@ -390,6 +390,22 @@ def register(mcp, engine: BridgeEngine) -> None:
     def tm_my_inbox(limit: int = 20) -> dict[str, Any]:
         """Return recent events on the caller worker's own timeline.
 
+        DEPRECATED for the standard containerized topology — resolves
+        identity from ``TM_WORKER_NAME`` in the HUB process's own env,
+        which is empty when the hub runs in a Docker container and the
+        worker runs on the host. It returns a misleading "TM_WORKER_NAME
+        not set" error even when the worker session's env is populated
+        correctly. Prefer the /sync-inbox skill flow: read
+        ``$TM_WORKER_NAME`` from the session's own shell, then call
+        ``tm_receive(worker=<name>)`` with an explicit worker argument.
+        See QM #555 for the transcript that caught this on
+        iris-qa-tm's fresh-restart e2e.
+
+        Kept in place so old callers still route through the hub without
+        crashing; do not extend it. Any new call site that needs the
+        caller-worker inbox should adopt the env-read + ``tm_receive``
+        pattern instead.
+
         Resolves identity from the TM_WORKER_NAME env var set by the
         claude-tm wrapper. Intended for use on restart via /sync-inbox:
         the worker catches up on any commands that arrived during the
