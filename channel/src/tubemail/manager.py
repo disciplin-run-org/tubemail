@@ -283,26 +283,39 @@ def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
     ).start()
 
 
+_READY_MARKERS = (
+    # Status-bar hint at the empty prompt (older TUI).
+    "for shortcuts",
+    # Idle-mode indicators (current TUI).
+    "auto mode on",
+    "for agents",
+    # Context-pct still emitted by some builds — matches legacy behavior.
+    "context ",
+)
+
+
 def _screen_looks_ready(screen_text: str) -> bool:
     """True when Claude Code's TUI has finished booting and is at the
     empty prompt — the moment when it's safe to type a message like
     ``/sync-inbox`` without landing in a startup dialog or an in-flight
     turn.
 
-    The heuristic: the "context N%" status-bar indicator only renders
-    once claude has finished its startup sequence (dev-channels warning,
-    MCP-server load, resume prompt if any, initial /rename) AND is not
-    currently running a turn. So its presence is a reliable "prompt is
-    ready" signal. We reuse the same regex ``_parse_context_pct`` uses
-    for the periodic context-pct heartbeat — one marker, one source of
-    truth.
+    The heuristic: at least one status-bar / prompt-hint marker that
+    only renders once claude has finished its startup sequence (dev-
+    channels warning, MCP-server load, resume prompt if any, initial
+    /rename) AND is not currently running a turn. Any single marker is
+    sufficient — Claude Code's TUI has shifted over versions (the
+    literal "context N%" was displaced by "auto mode on" / "for agents"
+    in the current build), and this list stays defensive by accepting
+    any of them.
 
-    Kept as a pure function so the fresh-restart auto-catchup unit tests
-    can pin the exact string patterns that count as ready.
+    Kept as a pure function so the fresh-restart auto-catchup unit
+    tests can pin the exact string patterns that count as ready.
     """
     if not screen_text:
         return False
-    return _parse_context_pct(screen_text.encode("utf-8", errors="replace")) is not None
+    lowered = screen_text.lower()
+    return any(marker in lowered for marker in _READY_MARKERS)
 
 
 def _rate_limit_delay(retry_count: int) -> int:

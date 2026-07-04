@@ -243,11 +243,9 @@ def test_screen_looks_ready_false_during_startup_dialog():
     assert _screen_looks_ready(startup) is False
 
 
-def test_screen_looks_ready_true_when_context_pct_visible():
-    """Once the status bar renders "context N%", claude has finished
-    startup and is idle at the empty prompt. That's when /sync-inbox is
-    safe to type. Uses the same regex the periodic context-pct heartbeat
-    already relies on — one marker, one source of truth."""
+def test_screen_looks_ready_true_when_shortcuts_hint_visible():
+    """Legacy TUI: "? for shortcuts" hint at the bottom of the prompt
+    means claude finished startup and is idle at an empty prompt."""
     ready = (
         "\n"
         "❯  \n"
@@ -256,12 +254,31 @@ def test_screen_looks_ready_true_when_context_pct_visible():
     assert _screen_looks_ready(ready) is True
 
 
-def test_screen_looks_ready_handles_low_and_high_percents():
-    """Boundary check — context 0% and 100% are both valid ready-marker
-    values; only unparseable text should read as "not ready"."""
-    assert _screen_looks_ready("context 0%") is True
-    assert _screen_looks_ready("context 100%") is True
-    assert _screen_looks_ready("context 200%") is False  # regex caps at 3 digits but _parse_context_pct rejects >100
+def test_screen_looks_ready_true_when_auto_mode_marker_visible():
+    """Current TUI: "auto mode on" appears in the status bar once the
+    session is idle at the empty prompt. Live-caught: the initial
+    predicate looked only for "context N%" and the current Claude Code
+    TUI stopped emitting that literal, so a fresh restart on
+    PycharmProjects-tm timed out and skipped auto-catchup silently."""
+    ready = (
+        "❯ Try \"refactor <filepath>\"\n"
+        "⏵⏵ auto mode on (shift+tab to cycle) · ← for agents"
+    )
+    assert _screen_looks_ready(ready) is True
+
+
+def test_screen_looks_ready_true_when_for_agents_hint_visible():
+    """Belt-and-braces: `for agents` alone is enough. Different TUI
+    themes / effort levels can rearrange the status-bar text; any one
+    idle marker being present is sufficient."""
+    assert _screen_looks_ready("← for agents") is True
+
+
+def test_screen_looks_ready_case_insensitive():
+    """The status bar can render markers in different casing depending
+    on the theme; the predicate must not be case-fragile."""
+    assert _screen_looks_ready("FOR SHORTCUTS") is True
+    assert _screen_looks_ready("Auto Mode On") is True
 
 
 class _FakePtyChild:
@@ -283,7 +300,7 @@ class _FakePtyChild:
             return "loading..."
         if time.monotonic() - self._start_ts < self._ready_after_s:
             return "loading..."
-        return "❯  ~/repo    context 5%    ? for shortcuts"
+        return "❯  ~/repo    auto mode on (shift+tab to cycle) · ← for agents"
 
     def _wait_for_screen(self, predicate, timeout_s: float, poll_s: float = 0.02) -> bool:
         # Simplified copy of the real _wait_for_screen so tests don't
