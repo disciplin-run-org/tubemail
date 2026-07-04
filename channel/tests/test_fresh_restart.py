@@ -69,25 +69,43 @@ def test_fresh_restart_omits_continue():
     assert was_fresh is True
 
 
-def test_fresh_restart_leaves_operator_continue_untouched():
-    """If the operator's own base_cmd already carries --continue, the fresh
-    flag can't strip it (that's the operator's explicit config). was_fresh
-    reports False so the operator's intent wins the log line too."""
+def test_fresh_restart_strips_sticky_continue_from_base_cmd():
+    """The claude-tm bash wrapper appends --continue to passthru after every
+    manager re-exec, so by the time the manager re-loads its own module the
+    "operator config" already carries --continue. Fresh must STRIP it to
+    genuinely start a new conversation; if fresh only "declines to append"
+    it would be a no-op in practice — the observed bug this feature fixes."""
     cmd_with_continue = BASE_CMD + ["--continue"]
     cmd, was_fresh = _build_restart_cmd(
         cmd_with_continue, restart_count=1, pending_fresh_restart=True
     )
-    assert cmd == cmd_with_continue
-    assert was_fresh is False
+    assert "--continue" not in cmd
+    assert cmd == BASE_CMD
+    assert was_fresh is True
 
 
-def test_fresh_restart_respects_short_continue_flag():
-    """`-c` is Claude's short form of --continue; same rule."""
+def test_fresh_restart_strips_short_continue_flag():
+    """`-c` is Claude's short form of --continue; same strip rule."""
     cmd_with_short = BASE_CMD + ["-c"]
     cmd, was_fresh = _build_restart_cmd(
         cmd_with_short, restart_count=1, pending_fresh_restart=True
     )
-    assert cmd == cmd_with_short
+    assert "-c" not in cmd
+    assert "--continue" not in cmd
+    assert cmd == BASE_CMD
+    assert was_fresh is True
+
+
+def test_default_restart_does_not_double_up_continue():
+    """When base_cmd already carries --continue (typical after a claude-tm
+    re-exec), the default restart branch must NOT append a second one."""
+    cmd_with_continue = BASE_CMD + ["--continue"]
+    cmd, was_fresh = _build_restart_cmd(
+        cmd_with_continue, restart_count=1, pending_fresh_restart=False
+    )
+    # Exactly one --continue, in its original position, was_fresh False.
+    assert cmd.count("--continue") == 1
+    assert cmd == cmd_with_continue
     assert was_fresh is False
 
 

@@ -89,21 +89,28 @@ def _build_restart_cmd(
 
     Rules:
     - First launch (restart_count == 0): use base_cmd verbatim.
-    - Subsequent launches: append `--continue` UNLESS the operator's config
-      already carries it (`--continue` / `-c`) OR the caller flagged this
-      restart as fresh. Fresh restarts start a new conversation, which lets
-      the Claude Code startup sequence re-run the automatic /rename and the
-      worker re-register cleanly.
+    - Fresh restart (pending_fresh_restart=True): STRIP any --continue / -c
+      that already rode in on base_cmd. The claude_tm bash-loop appends
+      --continue after every manager re-exec or crash, so a fresh restart
+      that only "doesn't append" wouldn't actually be fresh once the wrapper
+      has taken over. Fresh strips so the child truly starts a new
+      conversation and the startup /rename fires.
+    - Default restart: append `--continue` unless base_cmd already carries
+      it, so conversation context survives.
 
-    Returns (cmd, was_fresh). `was_fresh` is True only when the fresh flag
-    caused --continue to be omitted; it is False for first launches and for
-    launches whose config already carried the flag.
+    Returns (cmd, was_fresh). `was_fresh` is True only when this is a
+    restart cycle (restart_count > 0) served by the fresh flag; False for
+    first launches and for default restarts.
     """
     cmd = list(base_cmd)
+    if restart_count == 0:
+        return cmd, False
+    if pending_fresh_restart:
+        # Strip in-place: keep the operator's other args, drop --continue/-c.
+        cmd = [arg for arg in cmd if arg not in ("--continue", "-c")]
+        return cmd, True
     already_has_continue = "--continue" in cmd or "-c" in cmd
-    if restart_count > 0 and not already_has_continue:
-        if pending_fresh_restart:
-            return cmd, True
+    if not already_has_continue:
         cmd.append("--continue")
     return cmd, False
 
