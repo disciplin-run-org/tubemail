@@ -189,6 +189,40 @@ async def test_interrupt(mcp_and_engine):
     assert events[0].kind == "interrupt"
 
 
+async def test_restart_default_omits_fresh_meta(mcp_and_engine):
+    """Default tm_restart(worker) routes force_restart to the manager and
+    carries NO fresh flag. This is the resume path — the manager will
+    re-exec with --continue and preserve conversation context."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w-manager", "/tmp")
+    result = await _call(mcp, "tm_restart", worker="w")
+    data = result.structured_content
+    assert data["ok"] is True
+    assert data["routed_to"] == "w-manager"
+    assert data["fresh"] is False
+    events = engine.events_since("w-manager")
+    assert len(events) == 1
+    assert events[0].meta.get("kind") == "force_restart"
+    assert events[0].meta.get("fresh") is None
+
+
+async def test_restart_fresh_flag_propagates_through_meta(mcp_and_engine):
+    """tm_restart(worker, fresh=True) must set meta.fresh=True on the
+    routed event so the receiving manager can arm its one-shot flag and
+    skip --continue on the next restart cycle."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w-manager", "/tmp")
+    result = await _call(mcp, "tm_restart", worker="w", fresh=True)
+    data = result.structured_content
+    assert data["ok"] is True
+    assert data["routed_to"] == "w-manager"
+    assert data["fresh"] is True
+    events = engine.events_since("w-manager")
+    assert len(events) == 1
+    assert events[0].meta.get("kind") == "force_restart"
+    assert events[0].meta.get("fresh") is True
+
+
 async def test_get_instructions_returns_server_instructions(mcp_and_engine):
     """Meta-tool: AI can re-read the server's workflow doc after compaction."""
     mcp, _ = mcp_and_engine

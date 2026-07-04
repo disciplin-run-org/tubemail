@@ -551,24 +551,38 @@ def register(mcp, engine: BridgeEngine) -> None:
     # ── Manager control tools ──────────────────────────────────────────────
 
     @mcp.tool
-    async def tm_restart(worker: str) -> dict[str, Any]:
+    async def tm_restart(worker: str, fresh: bool = False) -> dict[str, Any]:
         """Force-restart a worker's Claude process via its manager.
 
         Routes a `force_restart` command to `<worker>-manager`. The manager
-        kills the Claude child process and restarts it with `--continue`
-        (preserving conversation context). Use this when:
+        kills the Claude child process and restarts it. Use this when:
         - Claude is hung and not responding to tubemail messages
         - The tubemail channel to the worker is dead
         - You need to force a restart that Claude can't do for itself
+
+        By default (fresh=false) the manager restarts with `--continue`,
+        preserving conversation context. Set fresh=true when the point of
+        the restart is to RECOVER from a bad conversation state (identity
+        loss after a self-issued /clear, an unrecoverable prompt loop,
+        etc.): the manager omits `--continue` for exactly one restart
+        cycle, so the child gets a fresh conversation and the startup
+        sequence types the automatic /rename to re-register cleanly.
+        Subsequent crash-recovery restarts revert to `--continue`.
 
         For a polite restart (when Claude IS responsive), send a tubemail
         message asking it to run the `/restart` skill instead.
         """
         manager = f"{worker}-manager"
-        event = await engine.enqueue_inbound(
-            manager, "force_restart", {"kind": "force_restart"}
-        )
-        return {"ok": True, "event_id": event.event_id, "routed_to": manager}
+        meta: dict[str, Any] = {"kind": "force_restart"}
+        if fresh:
+            meta["fresh"] = True
+        event = await engine.enqueue_inbound(manager, "force_restart", meta)
+        return {
+            "ok": True,
+            "event_id": event.event_id,
+            "routed_to": manager,
+            "fresh": bool(fresh),
+        }
 
     @mcp.tool
     async def tm_stop(worker: str) -> dict[str, Any]:

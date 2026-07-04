@@ -80,6 +80,46 @@ def _frames_backoff_s(consecutive_failures: int) -> float:
     return _FRAMES_BACKOFF_S[idx]
 
 
+def _build_restart_cmd(
+    base_cmd: list[str],
+    restart_count: int,
+    pending_fresh_restart: bool,
+) -> tuple[list[str], bool]:
+    """Compose the argv for the next child launch.
+
+    Rules:
+    - First launch (restart_count == 0): use base_cmd verbatim.
+    - Subsequent launches: append `--continue` UNLESS the operator's config
+      already carries it (`--continue` / `-c`) OR the caller flagged this
+      restart as fresh. Fresh restarts start a new conversation, which lets
+      the Claude Code startup sequence re-run the automatic /rename and the
+      worker re-register cleanly.
+
+    Returns (cmd, was_fresh). `was_fresh` is True only when the fresh flag
+    caused --continue to be omitted; it is False for first launches and for
+    launches whose config already carried the flag.
+    """
+    cmd = list(base_cmd)
+    already_has_continue = "--continue" in cmd or "-c" in cmd
+    if restart_count > 0 and not already_has_continue:
+        if pending_fresh_restart:
+            return cmd, True
+        cmd.append("--continue")
+    return cmd, False
+
+
+def _next_pending_fresh(
+    exit_code: int, restart_signal: bool, fresh_signal: bool
+) -> bool:
+    """Decide whether the NEXT restart cycle should skip --continue.
+
+    True only when a clean-exit restart carries the fresh flag. Crash
+    recovery (non-zero exit) always reverts to today's --continue behavior,
+    regardless of any prior fresh signal — so fresh is genuinely one-shot.
+    """
+    return exit_code == 0 and restart_signal and fresh_signal
+
+
 def _drain_queue(q: queue.Queue[bytes]) -> int:
     """Empty `q` of all currently-buffered bytes.
 
@@ -999,6 +1039,12 @@ class _ManagerChannelListener:
         self._restart_requested = False
         self._stop_requested = False
         self._update_manager_requested = False
+        # One-shot: when a restart signal carries meta.fresh=true, the manager
+        # skips appending --continue for the very next restart cycle so the
+        # child gets a fresh conversation and the startup /rename fires.
+        # Reset in clear_flags() each iteration; crash-recovery restarts never
+        # set this.
+        self._fresh_restart_requested = False
         # pty-bridge streaming state (v1 of the Integrated Terminal cap).
         # When a browser attaches via the WS bridge, the hub fans pty_attach
         # here; we spawn a background thread that copies pty master bytes
@@ -1032,10 +1078,15 @@ class _ManagerChannelListener:
     def update_manager_requested(self) -> bool:
         return self._update_manager_requested
 
+    @property
+    def fresh_restart_requested(self) -> bool:
+        return self._fresh_restart_requested
+
     def clear_flags(self) -> None:
         self._restart_requested = False
         self._stop_requested = False
         self._update_manager_requested = False
+        self._fresh_restart_requested = False
 
     def set_child(self, child: _PtyChild | None) -> None:
         self._child = child
@@ -1314,8 +1365,14 @@ class _ManagerChannelListener:
         child = self._child
 
         if kind == "force_restart":
-            logger.info("manager: force_restart — typing /exit into session")
+            fresh = bool(meta.get("fresh", False))
+            logger.info(
+                "manager: force_restart%s — typing /exit into session",
+                " (fresh)" if fresh else "",
+            )
             self._restart_requested = True
+            if fresh:
+                self._fresh_restart_requested = True
             if child:
                 child.send_command("/exit")
 
@@ -1326,8 +1383,14 @@ class _ManagerChannelListener:
                 child.send_command("/exit")
 
         elif kind == "restart":
-            logger.info("manager: restart signal from /restart skill")
+            fresh = bool(meta.get("fresh", False))
+            logger.info(
+                "manager: restart signal from /restart skill%s",
+                " (fresh)" if fresh else "",
+            )
             self._restart_requested = True
+            if fresh:
+                self._fresh_restart_requested = True
             if child:
                 child.send_command("/exit")
 
@@ -1879,21 +1942,39 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, _on_stop_signal)
 
     restart_count = 0
+    # One-shot flag captured from the PREVIOUS iteration's fresh_restart signal
+    # and consumed when building this iteration's cmd. Kept as a local (not on
+    # the listener) so listener.clear_flags() at the top of the loop can safely
+    # wipe listener state without losing the pending fresh decision.
+    pending_fresh_restart = False
     try:
         while True:
             _signal_restart = False
             if listener:
                 listener.clear_flags()
 
-            cmd = list(base_cmd)
-            if restart_count > 0 and "--continue" not in cmd and "-c" not in cmd:
-                cmd.append("--continue")
-                logger.info(
-                    "restarting worker '%s' (restart #%d)", session_name, restart_count
-                )
+            cmd, was_fresh = _build_restart_cmd(
+                base_cmd, restart_count, pending_fresh_restart
+            )
+            if restart_count > 0:
+                if was_fresh:
+                    logger.info(
+                        "restarting worker '%s' FRESH (no --continue, restart #%d)",
+                        session_name,
+                        restart_count,
+                    )
+                else:
+                    logger.info(
+                        "restarting worker '%s' (restart #%d)",
+                        session_name,
+                        restart_count,
+                    )
                 time.sleep(2)
             else:
                 logger.info("starting worker '%s'", session_name)
+            # Consume the one-shot: any subsequent crash-recovery restart in
+            # this loop reverts to today's --continue behavior.
+            pending_fresh_restart = False
 
             child = _PtyChild(cmd, session_name=session_name)
             _current_child = child
@@ -1918,6 +1999,9 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
             stop_signal = _signal_stop or (
                 listener.stop_requested if listener else False
             )
+            # Fresh only rides through the listener path (MCP/channel-driven);
+            # SIGUSR1-triggered restarts stay on today's --continue behavior.
+            fresh_signal = listener.fresh_restart_requested if listener else False
 
             if stop_signal:
                 logger.info("stop signal received — exiting")
@@ -1926,14 +2010,26 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
                 logger.info("worker exited cleanly (code 0) — stopping")
                 break
             elif exit_code == 0 and restart_signal:
-                logger.info(
-                    "worker exited with restart signal — restarting with --continue"
-                )
+                if fresh_signal:
+                    logger.info(
+                        "worker exited with fresh-restart signal — "
+                        "restarting WITHOUT --continue"
+                    )
+                else:
+                    logger.info(
+                        "worker exited with restart signal — "
+                        "restarting with --continue"
+                    )
             else:
+                # Crash recovery — always keep today's --continue behavior,
+                # even if the prior iteration was a fresh restart.
                 logger.info(
                     "worker exited (code %d) — restarting with --continue", exit_code
                 )
 
+            pending_fresh_restart = _next_pending_fresh(
+                exit_code, restart_signal, fresh_signal
+            )
             restart_count += 1
 
     finally:

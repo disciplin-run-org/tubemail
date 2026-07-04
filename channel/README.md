@@ -104,7 +104,7 @@ Installing this plugin also installs three slash commands the LLM can invoke
 
 | Command | What it does |
 |---|---|
-| `/restart` | Cleanly restart this Claude Code session via the manager (manager types `/exit`, then re-execs with `--continue` so conversation context survives). Use after editing CLAUDE.md, MCP config, or skills. |
+| `/restart` | Cleanly restart this Claude Code session via the manager (manager types `/exit`, then re-execs with `--continue` so conversation context survives). Use after editing CLAUDE.md, MCP config, or skills. Pass `fresh=true` (`meta={"kind": "restart", "fresh": true}` in the `tm_send` payload) to restart WITHOUT `--continue` — the startup sequence's automatic `/rename` fires and the worker re-registers cleanly. One-shot; crash-recovery restarts revert to `--continue`. |
 | `/sync-inbox` | After `/restart`, catch up on inbound tubemail events that arrived during the restart window (the SSE subscription was briefly down and doesn't replay). |
 | `/reconnect-mcp` | Reconnect a failed MCP server on this worker without manually driving `/mcp`. Picks the right tool (`tm_self_reconnect_mcp` for any non-tubemail server, `mcp__tubemail-channel__reconnect_mcp` if tubemail itself is down). |
 
