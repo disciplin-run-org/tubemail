@@ -231,6 +231,45 @@ _SYNC_INBOX_WAIT_S = 45.0
 _SYNC_INBOX_SETTLE_S = 2.0
 
 
+# Restart-signal debounce window. A restart/force_restart signal that
+# arrives within this many seconds of the previous ACCEPTED restart
+# signal is dropped as a duplicate. Two failure modes this protects
+# against:
+#   1. Client-side transport double-delivery — a dying worker session's
+#      SSE reconnect can replay the same event within ~100ms.
+#   2. Duplicate signals killing the newborn fresh child before it
+#      finishes booting, which turns the second signal into a non-zero
+#      exit and the loop reverts to --continue crash-recovery, silently
+#      defeating the one-shot fresh flag.
+# Chosen ≫ typical duplicate spacing (~0.1s) and ≪ any legitimate
+# consecutive restart cadence (minutes).
+_RESTART_DEBOUNCE_S = 10.0
+
+
+def _should_debounce_restart(
+    now: float, last_accepted_ts: float, window_s: float = _RESTART_DEBOUNCE_S
+) -> bool:
+    """True when a newly arriving restart signal should be dropped as a
+    duplicate of one already in flight.
+
+    Compares wall-clock ``now`` against ``last_accepted_ts`` (the time
+    of the last signal we honored). Any signal arriving inside the
+    window is a duplicate; anything past it is legitimate.
+
+    ``last_accepted_ts == 0.0`` is the "never accepted before" sentinel
+    (matches the listener's default). Since a real signal will always
+    have ``now`` far in the future of 0.0, the very first signal always
+    survives — no bootstrap dance needed.
+
+    Kept as a pure function so the debounce truth table (drop within
+    window, accept past window, first signal always accepted) is
+    directly testable without threading in a live event stream.
+    """
+    if last_accepted_ts <= 0.0:
+        return False
+    return (now - last_accepted_ts) < window_s
+
+
 def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
     """After a fresh restart, wait for the child's empty prompt and then
     type ``/sync-inbox`` into the pty.
@@ -1147,6 +1186,16 @@ class _ManagerChannelListener:
         # Reset in clear_flags() each iteration; crash-recovery restarts never
         # set this.
         self._fresh_restart_requested = False
+        # Debounce: monotonic-ish clock timestamp of the last restart
+        # signal we ACCEPTED. Subsequent restart/force_restart signals
+        # arriving within _RESTART_DEBOUNCE_S are logged and dropped so a
+        # client that double-delivers doesn't kill the newborn fresh
+        # child (that turns the second signal into a crash-recovery
+        # restart which reverts to --continue and silently defeats the
+        # one-shot fresh flag). Survives across restart iterations —
+        # NOT reset in clear_flags — so a duplicate arriving mid-launch
+        # of the freshly restarted child is still dropped.
+        self._last_restart_accepted_ts: float = 0.0
         # pty-bridge streaming state (v1 of the Integrated Terminal cap).
         # When a browser attaches via the WS bridge, the hub fans pty_attach
         # here; we spawn a background thread that copies pty master bytes
@@ -1467,6 +1516,16 @@ class _ManagerChannelListener:
         child = self._child
 
         if kind == "force_restart":
+            now = time.time()
+            if _should_debounce_restart(now, self._last_restart_accepted_ts):
+                logger.warning(
+                    "manager: dropping duplicate force_restart signal "
+                    "(%.2fs since last accepted; window %.0fs)",
+                    now - self._last_restart_accepted_ts,
+                    _RESTART_DEBOUNCE_S,
+                )
+                return
+            self._last_restart_accepted_ts = now
             fresh = bool(meta.get("fresh", False))
             logger.info(
                 "manager: force_restart%s — typing /exit into session",
@@ -1485,6 +1544,16 @@ class _ManagerChannelListener:
                 child.send_command("/exit")
 
         elif kind == "restart":
+            now = time.time()
+            if _should_debounce_restart(now, self._last_restart_accepted_ts):
+                logger.warning(
+                    "manager: dropping duplicate restart signal "
+                    "(%.2fs since last accepted; window %.0fs)",
+                    now - self._last_restart_accepted_ts,
+                    _RESTART_DEBOUNCE_S,
+                )
+                return
+            self._last_restart_accepted_ts = now
             fresh = bool(meta.get("fresh", False))
             logger.info(
                 "manager: restart signal from /restart skill%s",

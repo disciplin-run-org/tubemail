@@ -79,6 +79,14 @@ same manager loop reverts to `--continue`.
   fresh cycle only; default and crash-recovery restarts do NOT auto-type it.
   On timeout (rare — child never reaches the ready prompt) the manager logs
   a warning and skips rather than typing into a startup dialog.
+- Duplicate restart signals arriving within ~10 seconds of one already
+  accepted are dropped by the manager and logged with a warning. This
+  guards against client-side transport double-delivery (a dying
+  session's SSE reconnect can replay the same event within 100–200ms)
+  which would otherwise kill the newborn fresh child before it boots
+  and silently downgrade the fresh restart to a crash-recovery
+  --continue restart. A legitimate second restart a minute later is
+  unaffected by the debounce.
 - The fresh flag only affects the very next restart cycle. If the worker then
   crashes and the manager restarts it a second time, that second restart uses
   `--continue` (crash recovery is unchanged).

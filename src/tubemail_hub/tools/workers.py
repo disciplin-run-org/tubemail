@@ -590,6 +590,15 @@ def register(mcp, engine: BridgeEngine) -> None:
         Subsequent crash-recovery restarts revert to `--continue` and
         skip the auto-catchup.
 
+        Duplicate restart signals arriving within ~10 seconds of one
+        already accepted are dropped by the manager (logged as a
+        warning). This debounce guards against client-side transport
+        double-delivery — the same signal being replayed within
+        ~100ms — which would otherwise kill the newborn fresh child
+        before it finishes booting and silently downgrade the fresh
+        restart to a --continue crash-recovery restart. Legitimate
+        consecutive restarts a minute apart are unaffected.
+
         For a polite restart (when Claude IS responsive), send a tubemail
         message asking it to run the `/restart` skill instead.
         """
