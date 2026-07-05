@@ -246,6 +246,67 @@ _SYNC_INBOX_SETTLE_S = 2.0
 _RESTART_DEBOUNCE_S = 10.0
 
 
+def _terminal_title_bytes(session_name: str) -> bytes:
+    """Compose the OSC control sequence that overwrites the enclosing
+    terminal emulator's window AND tab/icon titles with ``session_name``.
+
+    Two sequences are emitted back-to-back:
+      * OSC 2 ``ESC ] 2 ; <name> BEL`` — window title
+      * OSC 1 ``ESC ] 1 ; <name> BEL`` — tab / icon title
+    Terminals that only honor one of the two silently ignore the other,
+    so both are always safe to send.
+
+    Unlike a typed ``/rename`` command routed through Claude's
+    conversation (the previously-disabled path), an OSC control
+    sequence cannot bleed into whatever prompt Claude renders next —
+    it is consumed by the terminal itself before the pty child sees
+    it, so the emitter can fire at any moment without a settle timer.
+
+    Kept as a pure function returning bytes so the class-boundary
+    regression test asserts the exact bytes emitted, without touching
+    a real terminal.
+    """
+    return (
+        f"\033]2;{session_name}\a".encode()
+        + f"\033]1;{session_name}\a".encode()
+    )
+
+
+def _emit_terminal_title(session_name: str, out=None) -> None:
+    """Write the terminal-title OSC sequence for ``session_name`` to
+    ``out`` (defaults to ``sys.stdout``).
+
+    Called once at manager startup and once per restart iteration so a
+    window recycled across roles (e.g. the iris-qa cwd hosts
+    ``iris-qa-tm``, ``iris-qa-coder-tm``, and ``iris-qa-ui-tm``, all
+    differentiated only by TM_WORKER_NAME) always shows the CURRENT
+    session's name in its title. Without this the title persists from
+    whichever role last ran in the window.
+
+    Any I/O failure is swallowed — the title is a nice-to-have; a
+    broken tty or a redirected stdout must never crash the manager.
+    """
+    if out is None:
+        out = sys.stdout
+    try:
+        buf = _terminal_title_bytes(session_name)
+        # Prefer the underlying file descriptor so the raw bytes reach
+        # the terminal even when sys.stdout is line-buffered TextIO.
+        # Fall back to write+flush if the object has no .buffer (e.g.
+        # a test stub or a redirected stream).
+        raw = getattr(out, "buffer", None)
+        if raw is not None:
+            raw.write(buf)
+            raw.flush()
+        else:
+            out.write(buf.decode("utf-8", errors="replace"))
+            out.flush()
+    except (OSError, ValueError):
+        # OSError: closed fd / broken pipe. ValueError: closed stream.
+        # Title is decorative; degrade quietly.
+        pass
+
+
 def _should_debounce_restart(
     now: float, last_accepted_ts: float, window_s: float = _RESTART_DEBOUNCE_S
 ) -> bool:
@@ -1027,13 +1088,11 @@ class _PtyChild:
                                     # re-trigger patterns on the next cycle.
                                     with self._screen_lock:
                                         self._screen_buf.clear()
-                                    # TEMPORARILY DISABLED — rename timer fires
-                                    # blind and can bleed into the next prompt.
-                                    # if label == "dev-channels":
-                                    #     threading.Timer(
-                                    #         2.0,
-                                    #         lambda: os.write(master, f"/rename {self._session_name}\r".encode()),
-                                    #     ).start()
+                                    # (Historical: a /rename-into-conversation timer
+                                    # used to fire here to correct a stale terminal
+                                    # title from a prior session. Replaced by a
+                                    # deterministic OSC write at manager startup +
+                                    # per-restart — see _emit_terminal_title.)
                                     break
 
                         # Rate-limit auto-retry: detect Anthropic's transient
@@ -2146,6 +2205,16 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
             # Consume the one-shot: any subsequent crash-recovery restart in
             # this loop reverts to today's --continue behavior.
             pending_fresh_restart = False
+
+            # Re-assert the terminal window/tab title on every iteration.
+            # The manager may be re-hosted in a window that previously ran
+            # a DIFFERENT worker (the iris-qa cwd hosts iris-qa-tm,
+            # iris-qa-coder-tm, and iris-qa-ui-tm — all differentiated
+            # only by TM_WORKER_NAME), and the OSC title set by that
+            # prior session persists until overwritten. Emit BEFORE the
+            # child pty starts so the title corrects immediately even if
+            # the child hangs during boot.
+            _emit_terminal_title(session_name)
 
             child = _PtyChild(cmd, session_name=session_name)
             _current_child = child
