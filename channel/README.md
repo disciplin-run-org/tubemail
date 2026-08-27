@@ -42,10 +42,25 @@ variables** that wire it all together.
 |---|---|---|
 | `TM_WORKER_NAME` | yes | Worker name registered with the hub. The Stop hook self-skips when unset, so a session without this var behaves like a normal Claude Code session. |
 | `TUBEMAIL_SECRET` | yes | Bearer token for hub HTTP. Never logged. |
+| `TUBEMAIL_ENV_FILE` | no | Explicit `KEY=value` file, read as the first env layer. |
 | `TUBEMAIL_HUB_URL` | no (defaults to `http://localhost:8001`) | Base URL of the hub. **Empty string falls back to the default** — some launch wrappers export `TUBEMAIL_HUB_URL=''` instead of leaving it unset, so the empty case is treated as unset. |
 | `TUBEMAIL_STOP_HOOK_RETRIES` | no (default `3`) | Stop-hook retry count. See `hooks/post_stop_relay.py`. |
 | `TUBEMAIL_STOP_HOOK_VERIFY` | no (default off) | When `1`, the Stop hook re-fetches the just-posted event via `GET /tubemail/<worker>/events` to confirm persistence. Doubles request count; off by default. |
 | `TUBEMAIL_STOP_HOOK_SPOOL_DIR` | no (test only) | Sandbox the per-worker spool directory. Production never sets this. |
+
+### Env file layering
+
+`claude-tm` layers env files nearest-first and reads **every** layer:
+
+1. `$TUBEMAIL_ENV_FILE`, when set
+2. `.env` walking up from the current directory (max 5 parent levels)
+3. `~/.config/tubemail/.env`
+
+Precedence is **per key, not per file** — the first layer to define a key
+wins, and later layers fill in keys the earlier ones omit. A repo that
+carries its own `.env` for unrelated reasons therefore does not shadow the
+global `TUBEMAIL_SECRET`. Variables already exported in the shell are never
+overwritten by any file.
 
 ## MCP tools
 

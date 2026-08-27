@@ -31,14 +31,21 @@ Environment::
                            ``tubemail-channel`` MCP entry in ``.mcp.json``
                            (for users who manage their MCP config externally).
 
-If ``TUBEMAIL_ENV_FILE`` is unset, claude-tm auto-loads (first hit wins,
-existing env vars are never overwritten):
+Env files are layered, nearest first, and every layer is read — a file
+that lacks a key never shadows a later file that has it. Precedence is
+per key, not per file (first layer to define a key wins; environment
+variables already set in the shell always win over all files):
 
-1. ``.env`` walking up from the current working directory (capped at
+1. ``$TUBEMAIL_ENV_FILE``, when set.
+2. ``.env`` walking up from the current working directory (capped at
    five parent levels — covers the common case of a repo-root ``.env``
    while you launch ``claude-tm`` from a subdirectory, without scanning
    the entire filesystem).
-2. ``~/.config/tubemail/.env``.
+3. ``~/.config/tubemail/.env``.
+
+Layering matters because plenty of repos carry a ``.env`` for unrelated
+reasons (a Vite frontend, say). Such a file supplies its own keys without
+making the global ``~/.config/tubemail/.env`` fallback unreachable.
 """
 
 from __future__ import annotations
@@ -95,7 +102,17 @@ def _find_dotenv_upward(start: Path) -> Path | None:
 
 
 def _load_env_files() -> None:
-    """Populate os.environ from optional env files. Never overwrites existing keys."""
+    """Populate os.environ from optional env files, layering every candidate.
+
+    Candidates are read nearest-first and ALL of them are read: ``setdefault``
+    gives per-key first-wins precedence, so an earlier file beats a later one
+    for keys it defines while later files still fill in the keys it omits.
+    Never overwrites keys already present in the environment.
+
+    Do not short-circuit after the first existing file — that made
+    ``~/.config/tubemail/.env`` unreachable from any repo carrying an
+    unrelated ``.env``. See test_load_env_files_falls_back_to_global_*.
+    """
     candidates: list[Path] = []
     explicit = os.environ.get("TUBEMAIL_ENV_FILE", "").strip()
     if explicit:
@@ -109,7 +126,6 @@ def _load_env_files() -> None:
             continue
         for k, v in _parse_env_file(cand).items():
             os.environ.setdefault(k, v)
-        return
 
 
 def _has_tubemail_channel_entry(path: Path) -> bool:
@@ -354,8 +370,10 @@ Environment:
   TM_SKIP_MCP_BOOTSTRAP=1  skip the auto-registration of the
                          `tubemail-channel` MCP entry in `.mcp.json`.
 
-If TUBEMAIL_ENV_FILE is unset, claude-tm auto-loads `.env` walking up
-from cwd (cap: 5 parent levels), then ~/.config/tubemail/.env. Existing
+Env files are layered, nearest first: $TUBEMAIL_ENV_FILE, then `.env`
+walking up from cwd (cap: 5 parent levels), then ~/.config/tubemail/.env.
+Every layer is read; the first one to define a key wins, so a local .env
+without TUBEMAIL_SECRET still falls back to the global file. Existing
 env vars are never overwritten.
 """
 

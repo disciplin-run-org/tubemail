@@ -335,21 +335,23 @@ def test_load_env_files_walks_up_to_repo_root(tmp_path: Path, monkeypatch):
 
 
 def test_load_env_files_explicit_path_wins(tmp_path: Path, monkeypatch):
+    """TUBEMAIL_ENV_FILE wins per key, and lower layers still fill the gaps."""
     explicit = tmp_path / "custom.env"
-    explicit.write_text("FROM_EXPLICIT=yes\n")
+    explicit.write_text("SHARED=from-explicit\n")
     cwd_env = tmp_path / ".env"
-    cwd_env.write_text("FROM_CWD=yes\n")
+    cwd_env.write_text("SHARED=from-cwd\nFROM_CWD=yes\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TUBEMAIL_ENV_FILE", str(explicit))
-    monkeypatch.delenv("FROM_EXPLICIT", raising=False)
+    monkeypatch.delenv("SHARED", raising=False)
     monkeypatch.delenv("FROM_CWD", raising=False)
 
     import os
 
     claude_tm._load_env_files()
-    assert os.environ["FROM_EXPLICIT"] == "yes"
-    # First hit wins — cwd .env is never opened.
-    assert "FROM_CWD" not in os.environ
+    # Precedence: the explicit file is consulted first, so its value stands.
+    assert os.environ["SHARED"] == "from-explicit"
+    # Layering: keys the explicit file does not define still come from cwd.
+    assert os.environ["FROM_CWD"] == "yes"
 
 
 def test_main_help_short_circuits(monkeypatch, capsys):
@@ -412,3 +414,58 @@ def test_check_pidfile_live_pid_with_force_continues(monkeypatch, capsys):
         assert "TM_FORCE=1" in err
     finally:
         pidfile.unlink(missing_ok=True)
+
+
+def test_load_env_files_falls_back_to_global_when_local_env_lacks_secret(
+    tmp_path: Path, monkeypatch
+):
+    """A project .env that does not define TUBEMAIL_SECRET must not shadow
+    ~/.config/tubemail/.env.
+
+    Regression: the candidate loop returned after the first *existing* file
+    rather than layering, so any repo carrying its own unrelated .env (e.g. a
+    Vite frontend) made the global fallback unreachable and claude-tm died
+    with "TUBEMAIL_SECRET is not set".
+    """
+    home = tmp_path / "home"
+    project = home / "projects" / "some-frontend"
+    project.mkdir(parents=True)
+    (project / ".env").write_text("VITE_AWS_REGION=us-east-1\n")
+    global_env = home / ".config" / "tubemail"
+    global_env.mkdir(parents=True)
+    (global_env / ".env").write_text("TUBEMAIL_SECRET=from-global\n")
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.chdir(project)
+    monkeypatch.delenv("TUBEMAIL_SECRET", raising=False)
+    monkeypatch.delenv("VITE_AWS_REGION", raising=False)
+    monkeypatch.delenv("TUBEMAIL_ENV_FILE", raising=False)
+
+    import os
+
+    claude_tm._load_env_files()
+    assert os.environ["VITE_AWS_REGION"] == "us-east-1"  # local .env still read
+    assert os.environ["TUBEMAIL_SECRET"] == "from-global"  # global fills the gap
+
+
+def test_load_env_files_local_env_wins_over_global_per_key(tmp_path: Path, monkeypatch):
+    """Layering is per-key first-wins: the nearer file still beats the global."""
+    home = tmp_path / "home"
+    project = home / "projects" / "worker"
+    project.mkdir(parents=True)
+    (project / ".env").write_text("TUBEMAIL_SECRET=from-project\n")
+    global_env = home / ".config" / "tubemail"
+    global_env.mkdir(parents=True)
+    (global_env / ".env").write_text("TUBEMAIL_SECRET=from-global\nONLY_GLOBAL=yes\n")
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.chdir(project)
+    monkeypatch.delenv("TUBEMAIL_SECRET", raising=False)
+    monkeypatch.delenv("ONLY_GLOBAL", raising=False)
+    monkeypatch.delenv("TUBEMAIL_ENV_FILE", raising=False)
+
+    import os
+
+    claude_tm._load_env_files()
+    assert os.environ["TUBEMAIL_SECRET"] == "from-project"
+    assert os.environ["ONLY_GLOBAL"] == "yes"
