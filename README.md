@@ -119,6 +119,14 @@ rebuild on the host is live without a container rebuild.
    auto-loads it. The worker registers as `<dirname>-tm` and appears in
    the roster. Use `--role <name>` to run multiple workers per project.
 
+   Env files are **layered**, nearest first: `$TUBEMAIL_ENV_FILE`, then
+   `.env` walking up from the current directory (max 5 levels), then
+   `~/.config/tubemail/.env`. Every layer is read and the first one to
+   define a key wins, so a project `.env` that exists for unrelated
+   reasons (a Vite frontend, say) supplies its own keys without hiding
+   the `TUBEMAIL_SECRET` in your global file. Shell variables always win
+   over files.
+
    On the first run, claude-tm auto-registers a minimal
    `tubemail-channel` entry in `~/.mcp.json` (user-global) so claude's
    `--dangerously-load-development-channels` flag can resolve the
