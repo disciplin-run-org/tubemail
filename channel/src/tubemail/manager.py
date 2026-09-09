@@ -35,6 +35,7 @@ import threading
 import time
 import tty
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Callable
 
 import httpx
@@ -113,6 +114,52 @@ def _build_restart_cmd(
     if not already_has_continue:
         cmd.append("--continue")
     return cmd, False
+
+
+# Opt-in switch for Claude Code's `--dangerously-skip-permissions`. Read from
+# the layered env files (see tubemail.claude_tm), so it is set per-machine in
+# ~/.config/tubemail/.env rather than committed.
+DANGEROUS_SKIP_ENV = "TM_DANGEROUSLY_SKIP_PERMISSIONS"
+_DANGEROUS_SKIP_FLAG = "--dangerously-skip-permissions"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_truthy(value: str) -> bool:
+    """Fail safe: only the recognised spellings are true, everything else false."""
+    return value.strip().lower() in _TRUTHY
+
+
+def _build_base_cmd(
+    *,
+    session_name: str,
+    channel_dir: str,
+    extra_args: list[str],
+    env: Mapping[str, str],
+) -> list[str]:
+    """Compose the `claude` argv for a worker launch.
+
+    `--dangerously-skip-permissions` bypasses every permission check, so it is
+    opt-in via DANGEROUS_SKIP_ENV and defaults OFF — a stock install from the
+    public repo must keep its prompts.
+    """
+    cmd = [
+        "claude",
+        "--name",
+        session_name,
+        "--rc",
+        session_name,
+        "--dangerously-load-development-channels",
+        "server:tubemail-channel",
+        "--plugin-dir",
+        channel_dir,
+    ]
+    if (
+        _env_truthy(env.get(DANGEROUS_SKIP_ENV, ""))
+        and _DANGEROUS_SKIP_FLAG not in extra_args
+    ):
+        cmd.append(_DANGEROUS_SKIP_FLAG)
+    cmd.extend(extra_args)
+    return cmd
 
 
 def _next_pending_fresh(
@@ -2061,19 +2108,18 @@ def run(session_name: str, extra_args: list[str] | None = None) -> int:
     # so Claude Code loads the /restart skill and other plugin commands.
     _channel_dir = str(Path(__file__).resolve().parents[2])
 
-    base_cmd = [
-        "claude",
-        "--name",
-        session_name,
-        "--rc",
-        session_name,
-        "--dangerously-load-development-channels",
-        "server:tubemail-channel",
-        "--plugin-dir",
-        _channel_dir,
-    ]
-    if extra_args:
-        base_cmd.extend(extra_args)
+    base_cmd = _build_base_cmd(
+        session_name=session_name,
+        channel_dir=_channel_dir,
+        extra_args=extra_args or [],
+        env=os.environ,
+    )
+    if _DANGEROUS_SKIP_FLAG in base_cmd:
+        logger.warning(
+            "%s is set — launching claude with %s (all permission checks bypassed)",
+            DANGEROUS_SKIP_ENV,
+            _DANGEROUS_SKIP_FLAG,
+        )
 
     # Set worker name in our own environment so it's inherited by the pty child,
     # which inherits it to claude, which inherits it to the channel.

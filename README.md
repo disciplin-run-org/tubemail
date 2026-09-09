@@ -138,6 +138,24 @@ rebuild on the host is live without a container rebuild.
    from claude-tm's env at spawn time. Set `TM_SKIP_MCP_BOOTSTRAP=1`
    to manage `.mcp.json` yourself.
 
+   **Skipping permission prompts (opt-in, off by default).** A worker
+   running unattended stops every time Claude Code asks to approve a
+   tool call. Setting `TM_DANGEROUSLY_SKIP_PERMISSIONS=1` in any of the
+   env-file layers launches `claude` with
+   `--dangerously-skip-permissions`, so it never prompts. Accepted
+   values are `1`, `true`, `yes`, `on` (case-insensitive); **anything
+   else, including unset, leaves it off** — a stock install keeps its
+   prompts, and an unrecognised value fails safe rather than silently
+   bypassing.
+
+   This flag bypasses *every* permission check, so only enable it where
+   something else already blocks dangerous commands deterministically —
+   a `PreToolUse` deny hook, a sandboxed container, or a VM you can
+   throw away. Put it in `~/.config/tubemail/.env` to apply it to every
+   worker on one machine; `.env` is gitignored, so the choice stays
+   local and never ships to anyone who clones the repo. The manager
+   logs a warning at startup whenever the flag is active.
+
 4. **From an orchestrator session** (with the `tubemail` MCP server
    added to `.mcp.json`):
    ```python

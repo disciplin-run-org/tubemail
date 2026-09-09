@@ -30,6 +30,12 @@ Environment::
     TM_SKIP_MCP_BOOTSTRAP=1  skip the auto-registration of the
                            ``tubemail-channel`` MCP entry in ``.mcp.json``
                            (for users who manage their MCP config externally).
+    TM_DANGEROUSLY_SKIP_PERMISSIONS  opt in to launching ``claude`` with
+                           ``--dangerously-skip-permissions``. Accepts
+                           1/true/yes/on; anything else (including unset)
+                           leaves it OFF. Bypasses EVERY permission check —
+                           only turn it on where a deterministic policy
+                           already gates dangerous commands.
 
 Env files are layered, nearest first, and every layer is read — a file
 that lacks a key never shadows a later file that has it. Precedence is
@@ -369,6 +375,9 @@ Environment:
   TUBEMAIL_ENV_FILE      explicit path to a KEY=value file.
   TM_SKIP_MCP_BOOTSTRAP=1  skip the auto-registration of the
                          `tubemail-channel` MCP entry in `.mcp.json`.
+  TM_DANGEROUSLY_SKIP_PERMISSIONS  1/true/yes/on to launch claude with
+                         `--dangerously-skip-permissions`. Default OFF.
+                         Bypasses every permission check.
 
 Env files are layered, nearest first: $TUBEMAIL_ENV_FILE, then `.env`
 walking up from cwd (cap: 5 parent levels), then ~/.config/tubemail/.env.
