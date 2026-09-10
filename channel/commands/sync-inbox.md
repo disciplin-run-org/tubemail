@@ -52,14 +52,27 @@ the guard matters more than the label.
    **Fresh restart:**
 
    ```
-   mcp__tubemail__tm_receive(worker="<name>", since_boundary=True, limit=20)
+   mcp__tubemail__tm_receive_since_boundary(worker="<name>", limit=20)
    ```
 
-   `since_boundary=True` starts the window strictly after the newest
-   session-boundary marker on your timeline. Everything above that marker
-   belongs to a session that has ended and is settled by definition — you
-   must not re-execute any of it. If no marker exists, the read degrades
-   to the ordinary tail and step 3's fresh rule applies instead.
+   This starts the window strictly after the newest session-boundary
+   marker on your timeline. Everything above that marker belongs to a
+   session that has ended and is settled by definition — you must not
+   re-execute any of it. If no marker exists, the read degrades to the
+   ordinary tail and step 3's fresh rule applies instead.
+
+   **Use this tool, not `tm_receive(..., since_boundary=True)`.** The flag
+   fails open: a session holding a stale tool schema drops the unknown
+   kwarg, the call still succeeds, and you get the full tail while
+   believing you got the boundary-scoped read — silently re-running work
+   the previous session already finished. The dedicated tool cannot fail
+   that way; if your schema is stale it errors with "unknown tool", which
+   tells you to run `mcp__tubemail__refresh_tools` and retry.
+
+   If you end up on the flag form anyway, verify it applied: **a
+   boundary-scoped read never contains a `session_boundary` event.** If
+   one appears in your results, the filter did not apply — refresh tools
+   and re-read; do not treat that result as settled.
 
    **`--continue` restart:**
 
@@ -85,7 +98,7 @@ the guard matters more than the label.
    replace it:
 
    - Everything at or above the newest `session_boundary` event is
-     settled. `since_boundary=True` already removed it; if you are
+     settled. `tm_receive_since_boundary` already removed it; if you are
      reading a full timeline for any reason, stop scanning at that event.
    - **With no boundary marker anywhere on the timeline**, treat only the
      *trailing* inbound events as live: those after the newest event of
@@ -207,6 +220,9 @@ Notes for anything posting a marker:
   delivered to the worker's channel. Do not post the marker with
   `tm_send` — that reaches the still-running session as a live work
   order saying its own work is settled.
+- Read it back with `tm_receive_since_boundary`, never with
+  `tm_receive(..., since_boundary=True)`. A stale client strips an
+  unknown kwarg and the call still succeeds; a missing tool errors.
 - Post the marker BEFORE any resume/self-message the successor must still
   act on (e.g. `/rollover`'s pre-posted `/resume-from-clear` order).
   Anything above the newest marker is invisible to a fresh start.

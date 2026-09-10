@@ -342,7 +342,7 @@ def register(mcp, engine: BridgeEngine) -> None:
         successor that restarts FRESH has no conversation context, so it
         cannot tell a finished work order from an unanswered one — this
         marker is the fact that replaces the guess. `/sync-inbox` reads it
-        via `tm_receive(worker, since_boundary=True)` and never re-executes
+        via `tm_receive_since_boundary(worker)` and never re-executes
         anything above it.
 
         Unlike `tm_send`, this does NOT deliver anything to the worker's
@@ -372,10 +372,16 @@ def register(mcp, engine: BridgeEngine) -> None:
 
         `since_boundary=True` starts the window strictly after the newest
         session-boundary marker (`tm_session_boundary`, or a legacy inbound
-        whose body starts with `SESSION-BOUNDARY`). That is the read a
-        fresh-restarted worker wants: everything above the marker belongs
-        to a session that has ended and must not be re-executed. When both
-        `since` and `since_boundary` are given, the later start wins.
+        whose body starts with `SESSION-BOUNDARY`). When both `since` and
+        `since_boundary` are given, the later start wins.
+
+        PREFER `tm_receive_since_boundary` for that read. This flag fails
+        OPEN: a client holding a stale tool schema drops the unknown kwarg,
+        the call still succeeds, and the caller silently gets the full tail
+        it was trying to avoid — including work a finished session already
+        did. A caller that uses the flag anyway can detect the drop: a
+        boundary-scoped result NEVER contains a `session_boundary` event,
+        so seeing one means the filter did not apply.
 
         Use this to poll for worker replies after calling `tm_send`, or combine
         with `tm_wait_for_activity` to avoid tight polling loops.
@@ -383,6 +389,43 @@ def register(mcp, engine: BridgeEngine) -> None:
         events = engine.events_since(
             worker, since=since, limit=limit, since_boundary=since_boundary
         )
+        return [
+            {
+                "event_id": e.event_id,
+                "ts": e.ts,
+                "kind": e.kind,
+                "content": e.content,
+                "meta": e.meta,
+            }
+            for e in events
+        ]
+
+    @mcp.tool
+    def tm_receive_since_boundary(
+        worker: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Read only what arrived AFTER the worker's newest session boundary.
+
+        The read a fresh-restarted worker wants: everything above the
+        marker belongs to a session that has ended and must not be
+        re-executed. Recognises both marker shapes — `tm_session_boundary`
+        events and legacy inbounds whose body starts with
+        `SESSION-BOUNDARY`. With no marker anywhere it returns the ordinary
+        tail; losing a work order is worse than showing extra history.
+
+        This exists as its own verb rather than a flag on `tm_receive`
+        because the flag fails OPEN and silently. A client holding a stale
+        tool schema strips an unknown kwarg and the call still succeeds —
+        so `tm_receive(worker, since_boundary=True)` can quietly return the
+        full tail, re-running work a finished session already did, which is
+        the exact defect the marker was introduced to close. A missing TOOL
+        errors loudly ("unknown tool: refresh and retry"); a missing
+        PARAMETER does not. Caught by the independent reviewer of jjstack
+        PR #43, who hit precisely that stale-schema case (QM #616).
+
+        Returns the same event shape as `tm_receive`.
+        """
+        events = engine.events_since(worker, limit=limit, since_boundary=True)
         return [
             {
                 "event_id": e.event_id,
