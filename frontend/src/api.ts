@@ -325,6 +325,7 @@ export function subscribeEvents(
     'permission_request',
     'permission_response',
     'interrupt',
+    'session_boundary',
     'closed',
   ]
   for (const kind of kinds) {

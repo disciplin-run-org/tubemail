@@ -233,7 +233,8 @@ restarts under `<data>/hub-config.json`.
 | `tm_list_workers` | Who is connected (color-coded table, project-grouped) |
 | `tm_status` | `idle` / `busy` / `waiting_permission` for one worker. Trailing-inbound older than 10 min decays to `idle`. |
 | `tm_send` | Deliver a message to a worker (or harness command to its manager) |
-| `tm_receive` | Read a worker's event timeline |
+| `tm_receive` | Read a worker's event timeline (`since_boundary=True` starts after the newest session-boundary marker) |
+| `tm_session_boundary` | Mark a timeline "everything above is settled" — posted by `/save-and-clear`, `/save-and-exit`, `/rollover` before the session ends. Not delivered to the worker. |
 | `tm_wait_for_activity` | Block until the worker produces an event |
 | `tm_my_inbox` | Worker-facing: what messages arrived while I was offline |
 | `tm_interrupt` | Pause a worker |
@@ -242,7 +243,7 @@ restarts under `<data>/hub-config.json`.
 | `tm_pending_permissions` | List tool-approval prompts across workers |
 | `tm_respond_permission` | Allow / deny a pending permission |
 | **Process control** | |
-| `tm_restart` | Clean restart via `/exit` + `--continue` (pass `fresh=true` to restart WITHOUT `--continue` — recovers identity via the startup `/rename` and the manager also auto-types `/sync-inbox` once the fresh prompt is ready; one-shot) |
+| `tm_restart` | Clean restart via `/exit` + `--continue` (pass `fresh=true` to restart WITHOUT `--continue` — recovers identity via the startup `/rename` and the manager also auto-types `/sync-inbox fresh` once the fresh prompt is ready; one-shot) |
 | `tm_stop` | Kill a worker |
 | `tm_purge_worker` | Remove a worker's registry entry |
 | `tm_keystroke` | Send raw keystrokes to a worker's pty |

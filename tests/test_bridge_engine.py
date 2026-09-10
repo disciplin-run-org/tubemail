@@ -1002,3 +1002,166 @@ async def test_outbound_auto_sweep_persists_to_disk(
 
     fresh = BridgeEngine(data_dir=tmp_path)
     assert fresh._workers["w"].pending_permissions == []
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Session boundaries
+#
+# The marker exists so a FRESH-restarted worker can tell settled history
+# from live work. It has no conversation context to compare the timeline
+# against, so "did I already handle this inbound?" is unanswerable —
+# without the marker a /save-and-clear that means "new task, clean slate"
+# re-executes the previous session's finished orders.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def test_session_boundary_recorded_as_own_kind(engine: BridgeEngine):
+    await engine.register_worker("w", "/")
+    event = await engine.record_session_boundary("w", "/save-and-clear")
+    assert event.kind == "session_boundary"
+    assert event.content == "/save-and-clear"
+    assert engine.events_since("w")[-1].event_id == event.event_id
+
+
+async def test_session_boundary_not_delivered_to_worker(engine: BridgeEngine):
+    """The marker must NOT reach the worker's channel. It is posted while
+    the outgoing session is still alive; delivered as a channel_event,
+    "everything above this line is settled" reads as a work order to the
+    very session it is describing."""
+    await engine.register_worker("w", "/")
+    forwarder: asyncio.Queue = asyncio.Queue()
+    engine._outbound_subscribers.setdefault("w", []).append(forwarder)
+    global_sub: asyncio.Queue = asyncio.Queue()
+    engine._global_subscribers.append(global_sub)
+
+    await engine.record_session_boundary("w", "/save-and-clear")
+
+    assert forwarder.empty(), "boundary marker leaked into the worker's channel"
+    # The web UI still needs it — a trailing boundary flips the roster to idle.
+    assert global_sub.get_nowait()["event"] == "session_boundary"
+
+    # Control: an ordinary inbound DOES reach the forwarder, so the
+    # assertion above is about routing, not about a dead subscriber.
+    await engine.enqueue_inbound("w", "real work order")
+    assert forwarder.get_nowait()["event"] == "channel_event"
+
+
+async def test_events_since_boundary_hides_settled_history(engine: BridgeEngine):
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "old work order")
+    await engine.record_outbound("w", "old reply")
+    await engine.record_session_boundary("w", "/save-and-clear")
+    live = await engine.enqueue_inbound("w", "new work order")
+
+    visible = engine.events_since("w", since_boundary=True)
+    assert [e.event_id for e in visible] == [live.event_id]
+
+
+async def test_events_since_boundary_stops_at_newest_marker(engine: BridgeEngine):
+    """Two boundaries on one timeline: only the newest one counts."""
+    await engine.register_worker("w", "/")
+    await engine.record_session_boundary("w", "first")
+    await engine.enqueue_inbound("w", "work from the middle session")
+    await engine.record_session_boundary("w", "second")
+    live = await engine.enqueue_inbound("w", "work for the new session")
+
+    visible = engine.events_since("w", since_boundary=True)
+    assert [e.event_id for e in visible] == [live.event_id]
+
+
+async def test_events_since_boundary_empty_when_marker_is_last(engine: BridgeEngine):
+    """Nothing arrived after the boundary → nothing to do. This is the
+    plain /save-and-clear case: the successor must start a new task, not
+    replay the timeline."""
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "finished work order")
+    await engine.record_session_boundary("w", "/save-and-clear")
+
+    assert engine.events_since("w", since_boundary=True) == []
+
+
+async def test_events_since_boundary_falls_back_to_tail(engine: BridgeEngine):
+    """No marker on the timeline at all (worker never ran a boundary verb)
+    → the read degrades to the ordinary tail rather than returning
+    nothing. Losing a work order is worse than showing extra history."""
+    await engine.register_worker("w", "/")
+    e1 = await engine.enqueue_inbound("w", "one")
+    e2 = await engine.enqueue_inbound("w", "two")
+
+    visible = engine.events_since("w", since_boundary=True)
+    assert [e.event_id for e in visible] == [e1.event_id, e2.event_id]
+
+
+async def test_legacy_string_marker_recognised(engine: BridgeEngine):
+    """jjstack posted boundaries as `tm_send` bodies starting with
+    SESSION-BOUNDARY before the event kind existed. Those timelines are
+    on disk right now — dropping the fallback would silently un-settle
+    every boundary already posted."""
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "old work order")
+    await engine.enqueue_inbound(
+        "w",
+        "SESSION-BOUNDARY — /save-and-clear. Everything above this line is "
+        "settled; the next session starts a new task.",
+    )
+    live = await engine.enqueue_inbound("w", "new work order")
+
+    marker = engine.newest_session_boundary("w")
+    assert marker is not None and marker.kind == "inbound"
+    visible = engine.events_since("w", since_boundary=True)
+    assert [e.event_id for e in visible] == [live.event_id]
+
+
+async def test_first_class_marker_wins_over_older_legacy_string(
+    engine: BridgeEngine,
+):
+    """Mixed timeline during the jjstack migration: whichever marker is
+    NEWEST is the boundary, regardless of shape."""
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "SESSION-BOUNDARY — legacy")
+    await engine.enqueue_inbound("w", "work from the middle session")
+    await engine.record_session_boundary("w", "/rollover")
+    live = await engine.enqueue_inbound("w", "resume order")
+
+    assert engine.newest_session_boundary("w").kind == "session_boundary"
+    assert [e.event_id for e in engine.events_since("w", since_boundary=True)] == [
+        live.event_id
+    ]
+
+
+async def test_explicit_cursor_past_boundary_is_not_widened(engine: BridgeEngine):
+    """`since` and `since_boundary` together take the LATER start. A
+    caller that already read past the boundary must not be handed those
+    events again."""
+    await engine.register_worker("w", "/")
+    await engine.record_session_boundary("w", "/rollover")
+    read_already = await engine.enqueue_inbound("w", "resume order")
+    fresh = await engine.enqueue_inbound("w", "follow-up")
+
+    visible = engine.events_since("w", since=read_already.event_id, since_boundary=True)
+    assert [e.event_id for e in visible] == [fresh.event_id]
+
+
+async def test_boundary_survives_reload(tmp_path: Path):
+    """The marker is only useful if it outlives the restart it announces —
+    the successor reads it from disk, not from memory."""
+    eng = BridgeEngine(data_dir=tmp_path)
+    await eng.register_worker("w", "/")
+    await eng.enqueue_inbound("w", "settled work")
+    await eng.record_session_boundary("w", "/save-and-clear")
+
+    fresh = BridgeEngine(data_dir=tmp_path)
+    marker = fresh.newest_session_boundary("w")
+    assert marker is not None
+    assert marker.kind == "session_boundary"
+    assert fresh.events_since("w", since_boundary=True) == []
+
+
+async def test_trailing_boundary_leaves_worker_idle(engine: BridgeEngine):
+    """A boundary after an inbound flips the roster to idle — the session
+    that owed a reply is gone, so the hub should stop showing it busy."""
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "work order")
+    assert engine.get_worker("w").status_state() == "busy"
+    await engine.record_session_boundary("w", "/save-and-exit")
+    assert engine.get_worker("w").status_state() == "idle"

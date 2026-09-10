@@ -81,12 +81,33 @@ class PermissionResponsePayload(BaseModel):
     behavior: Literal["allow", "deny"]
 
 
+# Legacy marker text. Before `kind="session_boundary"` existed, the only
+# way a caller could mark a boundary was to `tm_send` a message whose body
+# started with this string — it landed as an ordinary `inbound` event.
+# `BridgeEngine.newest_session_boundary` still recognises those so
+# timelines written by an older jjstack keep working.
+LEGACY_SESSION_BOUNDARY_PREFIX = "SESSION-BOUNDARY"
+
+
 class WorkerEvent(BaseModel):
-    """A single event on a worker's timeline — persisted and queryable."""
+    """A single event on a worker's timeline — persisted and queryable.
+
+    `session_boundary` is a marker, not traffic: it says "everything above
+    this line belongs to a session that has ended; a reader starting fresh
+    must not re-execute it." It is never delivered to the worker's channel
+    (see `BridgeEngine.record_session_boundary`).
+    """
 
     event_id: str
     ts: float
-    kind: Literal["inbound", "outbound", "permission_request", "permission_response", "interrupt"]
+    kind: Literal[
+        "inbound",
+        "outbound",
+        "permission_request",
+        "permission_response",
+        "interrupt",
+        "session_boundary",
+    ]
     content: str = ""
     meta: dict[str, Any] = Field(default_factory=dict)
 

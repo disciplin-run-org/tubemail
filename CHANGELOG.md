@@ -6,6 +6,25 @@ User-facing changes to TubeMail. Newest first.
 
 ### Added
 
+- **A restarted worker no longer redoes work its previous session already
+  finished.** When a session ends with a clean break — "save what you
+  learned, then start a new task" — the replacement session starts with no
+  memory of what came before. Catching up on messages that arrived during
+  the restart, it could not tell a completed work order from a waiting one,
+  so it re-ran the lot.
+
+  A session that ends now leaves a mark on its own timeline first:
+  everything above this line is settled. The replacement reads only what
+  arrived after that mark, so it picks up genuinely pending work and leaves
+  finished work alone. Nothing to configure — the session-boundary commands
+  post the mark themselves.
+
+  Two supporting changes come with it. Timelines show a session-boundary
+  divider, and a worker whose last message was a work order now shows as
+  idle once its session ends rather than staying stuck on "busy". And a
+  restart that keeps its conversation still catches up the old way — the
+  new rule applies only where there is no memory to check against.
+
 - **Optional: let a worker run without permission prompts.** Unattended
   workers used to stall waiting for someone to approve a tool call. Set
   `TM_DANGEROUSLY_SKIP_PERMISSIONS=1` in any env-file layer (put it in

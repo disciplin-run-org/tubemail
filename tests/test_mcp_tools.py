@@ -693,3 +693,66 @@ async def test_get_recording_truncated_flag(mcp_engine_with_recorder):
     data = result.structured_content
     assert data["truncated"] is True
     assert len(data["frames"]) == 3
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# tm_session_boundary / tm_receive(since_boundary=True)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def test_tm_session_boundary_marks_timeline(mcp_and_engine):
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    result = await _call(mcp, "tm_session_boundary", worker="w", reason="/rollover")
+    assert result.structured_content["event_id"]
+    marker = engine.newest_session_boundary("w")
+    assert marker is not None
+    assert marker.kind == "session_boundary"
+    assert marker.content == "/rollover"
+
+
+async def test_tm_receive_since_boundary_hides_settled_work(mcp_and_engine):
+    """The fresh-restart read: a successor sees only what arrived after
+    the boundary, so it cannot re-execute the previous session's orders."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "work the old session finished")
+    await _call(mcp, "tm_session_boundary", worker="w", reason="/save-and-clear")
+    await engine.enqueue_inbound("w", "work for the new session")
+
+    result = await _call(mcp, "tm_receive", worker="w", since_boundary=True)
+    events = result.structured_content["result"]
+    assert [e["content"] for e in events] == ["work for the new session"]
+
+
+async def test_tm_receive_default_still_returns_full_tail(mcp_and_engine):
+    """`since_boundary` is opt-in. An orchestrator polling for a reply
+    must keep seeing the whole tail it always saw."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "old")
+    await _call(mcp, "tm_session_boundary", worker="w")
+    await engine.enqueue_inbound("w", "new")
+
+    result = await _call(mcp, "tm_receive", worker="w")
+    kinds = [e["kind"] for e in result.structured_content["result"]]
+    assert kinds == ["inbound", "session_boundary", "inbound"]
+
+
+async def test_tm_receive_since_boundary_reads_legacy_string_marker(mcp_and_engine):
+    """A boundary jjstack posted with tm_send before the event kind
+    existed still settles the history above it."""
+    mcp, engine = mcp_and_engine
+    await engine.register_worker("w", "/")
+    await engine.enqueue_inbound("w", "work the old session finished")
+    await _call(
+        mcp,
+        "tm_send",
+        worker="w",
+        message="SESSION-BOUNDARY — /save-and-clear. Everything above is settled.",
+    )
+    await engine.enqueue_inbound("w", "work for the new session")
+
+    result = await _call(mcp, "tm_receive", worker="w", since_boundary=True)
+    events = result.structured_content["result"]
+    assert [e["content"] for e in events] == ["work for the new session"]

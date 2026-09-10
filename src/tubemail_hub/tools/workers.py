@@ -334,21 +334,55 @@ def register(mcp, engine: BridgeEngine) -> None:
             }
 
     @mcp.tool
+    async def tm_session_boundary(worker: str, reason: str = "") -> dict[str, Any]:
+        """Mark a worker's timeline: everything above this line is settled.
+
+        Post this from a session-boundary verb (`/save-and-clear`,
+        `/save-and-exit`, `/rollover`) just before the session ends. A
+        successor that restarts FRESH has no conversation context, so it
+        cannot tell a finished work order from an unanswered one — this
+        marker is the fact that replaces the guess. `/sync-inbox` reads it
+        via `tm_receive(worker, since_boundary=True)` and never re-executes
+        anything above it.
+
+        Unlike `tm_send`, this does NOT deliver anything to the worker's
+        Claude — it is a marker on the timeline, not a message. Post it
+        BEFORE any resume/self-message the successor must still act on;
+        anything above the newest marker is invisible to a fresh start.
+
+        Returns `{event_id, ts}`.
+        """
+        event = await engine.record_session_boundary(worker, reason)
+        return {"event_id": event.event_id, "ts": event.ts}
+
+    @mcp.tool
     def tm_receive(
-        worker: str, since: str | None = None, limit: int = 100
+        worker: str,
+        since: str | None = None,
+        limit: int = 100,
+        since_boundary: bool = False,
     ) -> list[dict[str, Any]]:
         """Read recent events on a worker's timeline.
 
         Events include inbound messages (from orchestrator), outbound replies
         (from worker's reply tool), permission requests, permission responses,
-        and interrupts. If `since` is provided (an event_id from a prior call),
-        only events strictly after that id are returned. Without `since`, returns
-        the last `limit` events.
+        interrupts, and session-boundary markers. If `since` is provided (an
+        event_id from a prior call), only events strictly after that id are
+        returned. Without `since`, returns the last `limit` events.
+
+        `since_boundary=True` starts the window strictly after the newest
+        session-boundary marker (`tm_session_boundary`, or a legacy inbound
+        whose body starts with `SESSION-BOUNDARY`). That is the read a
+        fresh-restarted worker wants: everything above the marker belongs
+        to a session that has ended and must not be re-executed. When both
+        `since` and `since_boundary` are given, the later start wins.
 
         Use this to poll for worker replies after calling `tm_send`, or combine
         with `tm_wait_for_activity` to avoid tight polling loops.
         """
-        events = engine.events_since(worker, since=since, limit=limit)
+        events = engine.events_since(
+            worker, since=since, limit=limit, since_boundary=since_boundary
+        )
         return [
             {
                 "event_id": e.event_id,
