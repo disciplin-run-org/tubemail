@@ -741,6 +741,72 @@ class BridgeEngine:
         }})
         return True
 
+    async def record_session_boundary(
+        self, worker: str, reason: str = ""
+    ) -> WorkerEvent:
+        """Mark the worker's timeline: everything above this line is settled.
+
+        Posted by a session-boundary verb (`/save-and-clear`,
+        `/save-and-exit`, `/rollover`) just before the session it belongs
+        to goes away. A successor that starts with NO conversation context
+        cannot tell a finished work order from an unanswered one — pairing
+        each inbound with a following outbound only works when there is a
+        context to compare against, and many work orders are answered with
+        code and commits rather than a channel reply. The marker replaces
+        that guess with a fact.
+
+        Deliberately NOT fanned out to the worker's forwarder: this is a
+        marker, not traffic. `enqueue_inbound` would push it down the
+        channel as a `channel_event`, and the still-running session would
+        read "everything above is settled" as a work order addressed to
+        it. Only the global (UI/roster) stream sees it.
+        """
+        async with self._lock:
+            ws = self._get_or_create_worker(worker)
+            event = WorkerEvent(
+                event_id=_new_event_id(),
+                ts=time.time(),
+                kind="session_boundary",
+                content=reason,
+                meta={},
+            )
+            ws.events.append(event)
+            ws.last_activity = event.ts
+            self._persist(worker)
+        await self._fan_out_global_only(worker, {
+            "event": "session_boundary",
+            "data": {"event_id": event.event_id, "content": reason},
+        })
+        return event
+
+    def newest_session_boundary(self, worker: str) -> WorkerEvent | None:
+        """The most recent session-boundary marker on `worker`'s timeline.
+
+        A marker is a `kind="session_boundary"` event and nothing else.
+
+        An earlier revision also treated any `inbound` whose body started
+        with ``SESSION-BOUNDARY`` as a marker, on the assumption that
+        timelines written before the event kind existed carried those. The
+        reviewer of PR #4 measured the live data volume and found zero —
+        jjstack posts via `tm_session_boundary` on every path, in both the
+        repo and the deployed skill pin — so the fallback protected
+        nothing while matching on user-controlled message content: any
+        message that happened to open with that text would silently hide
+        itself and everything above it from a fresh session's read. It is
+        gone, which also makes the "no `session_boundary` event in a
+        boundary-scoped result" check sound again — with the legacy shape
+        recognised, an unfiltered read of a legacy-marked timeline
+        contained no such event either, so the check passed on a read that
+        was never filtered.
+        """
+        ws = self._workers.get(worker)
+        if ws is None:
+            return None
+        for ev in reversed(ws.events):
+            if ev.kind == "session_boundary":
+                return ev
+        return None
+
     async def send_interrupt(self, worker: str) -> WorkerEvent:
         async with self._lock:
             ws = self._get_or_create_worker(worker)
@@ -760,19 +826,56 @@ class BridgeEngine:
     # ── queries ──────────────────────────────────────────────────────────────
 
     def events_since(
-        self, worker: str, since: str | None = None, limit: int = 100
+        self,
+        worker: str,
+        since: str | None = None,
+        limit: int = 100,
+        since_boundary: bool = False,
     ) -> list[WorkerEvent]:
+        """Events on `worker`'s timeline, newest-last.
+
+        `since` is an event_id cursor — only events strictly after it.
+        `since_boundary` starts the window strictly after the newest
+        session-boundary marker (see :meth:`newest_session_boundary`).
+        When both are given the LATER of the two wins, so an explicit
+        cursor past the boundary is never widened back to it.
+
+        Anchoring differs by intent, and the difference is load-bearing:
+
+        - `since` is PAGINATION. It walks forward from the cursor, so the
+          window is head-anchored and a caller can page to the end.
+        - Everything else is a RECENCY read — "what should I look at now".
+          Those are tail-anchored, so the newest events are always the
+          ones returned.
+
+        A cursor-less `since_boundary` read is the second kind. It was
+        head-anchored until the reviewer of PR #4 caught it: `/sync-inbox`
+        and jjstack's `resume-from-clear` both read `limit=20` and never
+        page, so once more than 20 events followed the marker the read
+        returned the oldest and hid the newest — precisely where a still
+        -pending order sits.
+        """
         ws = self._workers.get(worker)
         if ws is None:
             return []
-        if not since:
-            return ws.events[-limit:]
         start = 0
-        for i, e in enumerate(ws.events):
-            if e.event_id == since:
-                start = i + 1
-                break
-        return ws.events[start : start + limit]
+        if since:
+            for i, e in enumerate(ws.events):
+                if e.event_id == since:
+                    start = i + 1
+                    break
+        if since_boundary:
+            marker = self.newest_session_boundary(worker)
+            if marker is not None:
+                for i, e in enumerate(ws.events):
+                    if e.event_id == marker.event_id:
+                        start = max(start, i + 1)
+                        break
+        if since:
+            # Pagination: walk forward from the caller's cursor.
+            return ws.events[start : start + limit]
+        # Recency read (with or without a boundary): newest wins.
+        return ws.events[start:][-limit:]
 
     def list_pending_permissions(
         self,

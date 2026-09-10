@@ -380,7 +380,7 @@ def _should_debounce_restart(
 
 def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
     """After a fresh restart, wait for the child's empty prompt and then
-    type ``/sync-inbox`` into the pty.
+    type ``/sync-inbox fresh`` into the pty.
 
     A fresh restart drops all conversation context, so anything that
     landed on the worker's timeline in the seconds before the restart
@@ -388,6 +388,15 @@ def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
     orders) is invisible to the new session. Typing ``/sync-inbox``
     after startup makes the fresh session bootstrap itself from the
     timeline instead of sitting idle at an empty prompt.
+
+    The ``fresh`` argument matters. ``/sync-inbox``'s default reconcile
+    rule is "compare the timeline against your conversation context, and
+    when in doubt re-do the work" — safe after a ``--continue`` restart,
+    wrong here, because a fresh session has no context to compare against
+    and would confirm nothing was handled. The argument tells the skill
+    which restart flavor it is instead of leaving it to infer one, so a
+    ``/save-and-clear`` that means "new task, clean slate" cannot end up
+    re-running the previous session's finished orders.
 
     Runs in a daemon thread so pump_io keeps servicing the pty. The
     thread exits either after typing the command, on timeout, or if the
@@ -418,8 +427,10 @@ def _spawn_post_fresh_sync_inbox(child: "_PtyChild", session_name: str) -> None:
         # in-flight startup writes (its own /rename) before we send.
         time.sleep(_SYNC_INBOX_SETTLE_S)
         try:
-            child.send_command("/sync-inbox")
-            logger.info("post-fresh /sync-inbox typed into worker '%s'", session_name)
+            child.send_command("/sync-inbox fresh")
+            logger.info(
+                "post-fresh /sync-inbox fresh typed into worker '%s'", session_name
+            )
         except Exception as e:
             logger.warning(
                 "post-fresh /sync-inbox send failed for %s: %s", session_name, e

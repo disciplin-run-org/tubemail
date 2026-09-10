@@ -322,7 +322,14 @@ class _FakePtyChild:
 def test_post_fresh_sync_inbox_types_when_prompt_ready(monkeypatch):
     """The happy path: after fresh restart, prompt becomes ready quickly,
     the helper types /sync-inbox exactly once. Settle is monkeypatched
-    down so the test finishes in well under a second."""
+    down so the test finishes in well under a second.
+
+    The `fresh` argument is part of the contract, not decoration: it tells
+    /sync-inbox that this session has NO conversation context, so the
+    skill uses the session-boundary read instead of the "compare against
+    what you remember, and when in doubt re-do it" rule — which after a
+    fresh start would confirm nothing was handled and replay the whole
+    timeline."""
     monkeypatch.setattr("tubemail.manager._SYNC_INBOX_SETTLE_S", 0.05)
     child = _FakePtyChild(ready_after_s=0.02)
     _spawn_post_fresh_sync_inbox(child, "sacrificial-tm")
@@ -330,7 +337,7 @@ def test_post_fresh_sync_inbox_types_when_prompt_ready(monkeypatch):
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline and not child.sent:
         time.sleep(0.02)
-    assert child.sent == ["/sync-inbox"]
+    assert child.sent == ["/sync-inbox fresh"]
 
 
 def test_post_fresh_sync_inbox_skips_when_prompt_never_readies(monkeypatch):

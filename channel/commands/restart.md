@@ -57,9 +57,9 @@ same manager loop reverts to `--continue`.
    - "Fresh restart signal sent. The manager will type /exit and restart the
      session WITHOUT --continue, so the startup /rename runs and the worker
      re-registers with a clean conversation. Once the new prompt is ready
-     the manager will also auto-type /sync-inbox, so the fresh session
-     catches up on any timeline events that arrived during the restart
-     window instead of sitting idle." (fresh).
+     the manager will also auto-type /sync-inbox fresh, so the fresh
+     session catches up on any timeline events that arrived during the
+     restart window instead of sitting idle." (fresh).
 
 4. **Do nothing else.** The manager handles the actual exit and restart. Do NOT
    try to run /exit yourself — the manager types it for you via the pty.
@@ -73,10 +73,14 @@ same manager loop reverts to `--continue`.
 - After a DEFAULT restart, run `/sync-inbox` yourself to catch any tubemail
   messages that arrived during the restart window — the channel plugin's SSE
   subscription was briefly down and doesn't replay missed events.
-- After a FRESH restart, the manager auto-types `/sync-inbox` for you once
-  the child's empty prompt is ready (detected via the status-bar "context N%"
-  marker, then a short settle delay). The auto-catchup is scoped to the
-  fresh cycle only; default and crash-recovery restarts do NOT auto-type it.
+- After a FRESH restart, the manager auto-types `/sync-inbox fresh` for you
+  once the child's empty prompt is ready (detected via the status-bar
+  "context N%" marker, then a short settle delay). The `fresh` argument
+  switches the skill to the session-boundary read — a fresh session has no
+  conversation context to reconcile against, so the default "when in doubt,
+  re-do it" rule would replay the whole timeline. The auto-catchup is scoped
+  to the fresh cycle only; default and crash-recovery restarts do NOT
+  auto-type it.
   On timeout (rare — child never reaches the ready prompt) the manager logs
   a warning and skips rather than typing into a startup dialog.
 - Duplicate restart signals arriving within ~10 seconds of one already

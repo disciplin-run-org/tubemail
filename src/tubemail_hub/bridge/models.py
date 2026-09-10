@@ -82,11 +82,24 @@ class PermissionResponsePayload(BaseModel):
 
 
 class WorkerEvent(BaseModel):
-    """A single event on a worker's timeline — persisted and queryable."""
+    """A single event on a worker's timeline — persisted and queryable.
+
+    `session_boundary` is a marker, not traffic: it says "everything above
+    this line belongs to a session that has ended; a reader starting fresh
+    must not re-execute it." It is never delivered to the worker's channel
+    (see `BridgeEngine.record_session_boundary`).
+    """
 
     event_id: str
     ts: float
-    kind: Literal["inbound", "outbound", "permission_request", "permission_response", "interrupt"]
+    kind: Literal[
+        "inbound",
+        "outbound",
+        "permission_request",
+        "permission_response",
+        "interrupt",
+        "session_boundary",
+    ]
     content: str = ""
     meta: dict[str, Any] = Field(default_factory=dict)
 
