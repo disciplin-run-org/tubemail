@@ -81,14 +81,6 @@ class PermissionResponsePayload(BaseModel):
     behavior: Literal["allow", "deny"]
 
 
-# Legacy marker text. Before `kind="session_boundary"` existed, the only
-# way a caller could mark a boundary was to `tm_send` a message whose body
-# started with this string — it landed as an ordinary `inbound` event.
-# `BridgeEngine.newest_session_boundary` still recognises those so
-# timelines written by an older jjstack keep working.
-LEGACY_SESSION_BOUNDARY_PREFIX = "SESSION-BOUNDARY"
-
-
 class WorkerEvent(BaseModel):
     """A single event on a worker's timeline — persisted and queryable.
 

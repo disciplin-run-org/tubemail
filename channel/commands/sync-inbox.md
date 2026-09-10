@@ -94,18 +94,27 @@ the guard matters more than the label.
 3. **Decide what is unhandled.**
 
    **Fresh restart.** You have no context, so "did I already handle this?"
-   is not a question you can answer — do not try. Two deterministic rules
-   replace it:
+   is not a question you can answer — do not try. One rule replaces it,
+   applied to **the window you read in step 2** (everything after the
+   newest marker, or the whole timeline when there is no marker):
 
-   - Everything at or above the newest `session_boundary` event is
-     settled. `tm_receive_since_boundary` already removed it; if you are
-     reading a full timeline for any reason, stop scanning at that event.
-   - **With no boundary marker anywhere on the timeline**, treat only the
-     *trailing* inbound events as live: those after the newest event of
-     any other kind (`outbound`, `permission_request`,
-     `permission_response`, `interrupt`, `session_boundary`). An inbound
-     with a later event of another kind after it was already being worked
-     on by the session that is now gone.
+   - **Only the *trailing* inbounds are live** — those after the newest
+     event of any other kind (`outbound`, `permission_request`,
+     `permission_response`, `interrupt`, `session_boundary`). Execute
+     these.
+   - **Every other inbound in the window is ambiguous, not settled.** The
+     session that is gone had started on it — there is an event after it
+     proving so — but you cannot tell from here whether it finished.
+     **Execute none of them, and name all of them to the orchestrator in
+     one `reply`.** Handing the decision up is not the same as dropping
+     it; step 5 explains why this is the only safe move.
+
+   Do not treat "below the marker" as "live". A marker settles what is
+   *above* it, nothing more. A fresh restart that posts no new marker —
+   `tm_restart(worker, fresh=true)`, which this skill names as an
+   auto-trigger — leaves every order the dead session already answered
+   sitting below a stale marker. Replaying those is the exact accidental
+   continuation this whole mechanism exists to prevent.
 
    **`--continue` restart.** For each `kind=inbound` event:
 
@@ -131,12 +140,19 @@ the guard matters more than the label.
    for those, ask the orchestrator first via `reply` rather than
    re-executing blind.
 
-   **Fresh: prefer asking over re-executing.** That rule inverts here.
-   With no context you can confirm *nothing* was handled, so "when in
-   doubt, re-do it" re-runs the entire timeline — exactly the accidental
-   continuation a `/save-and-clear` was supposed to end. For anything
-   ambiguous, `reply` to the orchestrator naming the events you are
-   unsure about and wait, rather than executing them.
+   **Fresh: prefer asking over both.** That rule inverts here. With no
+   context you can confirm *nothing* was handled, so "when in doubt,
+   re-do it" re-runs the entire timeline — exactly the accidental
+   continuation a `/save-and-clear` was supposed to end.
+
+   But the opposite failure is just as real, and quieter: an inbound the
+   dead session had started and not finished (an order it was blocked on
+   at a permission prompt, say) is not trailing, so nothing will execute
+   it. If you also say nothing, the orchestrator waits forever on a reply
+   that is never coming. **Never let an inbound leave this skill
+   unmentioned.** Every inbound in your window ends up in exactly one of
+   two buckets — executed, or named to the orchestrator — and step 6's
+   output must account for both.
 
 ## Genuinely not a claude-tm worker
 
@@ -180,14 +196,23 @@ First-start signals (no need for /sync-inbox):
 
 ## Output
 
-Tell the user (or the orchestrator via `reply`) what you found:
+Tell the user (or the orchestrator via `reply`) what you found. Both
+buckets are mandatory — an ambiguous inbound that appears in neither is a
+work order nobody is waiting on any more, and nobody knows it:
 
 ```
 /sync-inbox (fresh): worker <name>, boundary <event_id> at <ts>,
-scanned N events after it, K unhandled.
-Processing unhandled:
+scanned N events after it. K live, A ambiguous.
+Executing (trailing):
 - <event_id> at <ts>: <summary> → <action>
+NOT executed — the previous session had started these and I cannot tell
+if it finished. Say which to re-run:
+- <event_id> at <ts>: <summary> (followed by <kind> at <ts>)
 ```
+
+If A is 0, say so explicitly ("0 ambiguous") rather than omitting the
+section — silence there is indistinguishable from having forgotten to
+look.
 
 Or if all caught up:
 
@@ -226,9 +251,9 @@ Notes for anything posting a marker:
 - Post the marker BEFORE any resume/self-message the successor must still
   act on (e.g. `/rollover`'s pre-posted `/resume-from-clear` order).
   Anything above the newest marker is invisible to a fresh start.
-- The legacy shape — a `tm_send` whose body starts with
-  `SESSION-BOUNDARY` — is still recognised, so timelines written before
-  the event kind existed keep working. New callers should use the tool.
+- A marker is the event kind and nothing else. Message text cannot forge
+  one — a body that merely opens with `SESSION-BOUNDARY` is ordinary
+  traffic and settles nothing.
 
 ## Why this exists
 

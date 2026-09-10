@@ -371,9 +371,8 @@ def register(mcp, engine: BridgeEngine) -> None:
         returned. Without `since`, returns the last `limit` events.
 
         `since_boundary=True` starts the window strictly after the newest
-        session-boundary marker (`tm_session_boundary`, or a legacy inbound
-        whose body starts with `SESSION-BOUNDARY`). When both `since` and
-        `since_boundary` are given, the later start wins.
+        session-boundary marker (`tm_session_boundary`). When both `since`
+        and `since_boundary` are given, the later start wins.
 
         PREFER `tm_receive_since_boundary` for that read. This flag fails
         OPEN: a client holding a stale tool schema drops the unknown kwarg,
@@ -408,10 +407,13 @@ def register(mcp, engine: BridgeEngine) -> None:
 
         The read a fresh-restarted worker wants: everything above the
         marker belongs to a session that has ended and must not be
-        re-executed. Recognises both marker shapes — `tm_session_boundary`
-        events and legacy inbounds whose body starts with
-        `SESSION-BOUNDARY`. With no marker anywhere it returns the ordinary
-        tail; losing a work order is worse than showing extra history.
+        re-executed. A marker is a `tm_session_boundary` event and nothing
+        else — message text cannot forge one. With no marker anywhere it
+        returns the ordinary tail; losing a work order is worse than
+        showing extra history.
+
+        Tail-anchored: with more events after the marker than `limit`, you
+        get the NEWEST of them, which is where a still-pending order sits.
 
         This exists as its own verb rather than a flag on `tm_receive`
         because the flag fails OPEN and silently. A client holding a stale

@@ -739,9 +739,9 @@ async def test_tm_receive_default_still_returns_full_tail(mcp_and_engine):
     assert kinds == ["inbound", "session_boundary", "inbound"]
 
 
-async def test_tm_receive_since_boundary_reads_legacy_string_marker(mcp_and_engine):
-    """A boundary jjstack posted with tm_send before the event kind
-    existed still settles the history above it."""
+async def test_tm_send_cannot_forge_a_boundary(mcp_and_engine):
+    """Over the real tool surface: a sender cannot mark a boundary by
+    wording its message that way. Only tm_session_boundary marks one."""
     mcp, engine = mcp_and_engine
     await engine.register_worker("w", "/")
     await engine.enqueue_inbound("w", "work the old session finished")
@@ -753,9 +753,10 @@ async def test_tm_receive_since_boundary_reads_legacy_string_marker(mcp_and_engi
     )
     await engine.enqueue_inbound("w", "work for the new session")
 
-    result = await _call(mcp, "tm_receive", worker="w", since_boundary=True)
-    events = result.structured_content["result"]
-    assert [e["content"] for e in events] == ["work for the new session"]
+    result = await _call(mcp, "tm_receive_since_boundary", worker="w")
+    contents = [e["content"] for e in result.structured_content["result"]]
+    assert "work the old session finished" in contents, "prose settled history"
+    assert len(contents) == 3
 
 
 async def test_tm_receive_since_boundary_dedicated_tool(mcp_and_engine):

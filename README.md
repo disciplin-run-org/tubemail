@@ -234,7 +234,7 @@ restarts under `<data>/hub-config.json`.
 | `tm_status` | `idle` / `busy` / `waiting_permission` for one worker. Trailing-inbound older than 10 min decays to `idle`. |
 | `tm_send` | Deliver a message to a worker (or harness command to its manager) |
 | `tm_receive` | Read a worker's event timeline |
-| `tm_receive_since_boundary` | Read only what arrived after the newest session-boundary marker — the fresh-restart read. Its own verb, not a flag: a stale client silently strips an unknown kwarg, but errors loudly on an unknown tool. |
+| `tm_receive_since_boundary` | Read only what arrived after the newest session-boundary marker — the fresh-restart read, tail-anchored so the newest events always come back. Its own verb, not a flag: a stale client silently strips an unknown kwarg, but errors loudly on an unknown tool. |
 | `tm_session_boundary` | Mark a timeline "everything above is settled" — posted by `/save-and-clear`, `/save-and-exit`, `/rollover` before the session ends. Not delivered to the worker. |
 | `tm_wait_for_activity` | Block until the worker produces an event |
 | `tm_my_inbox` | Worker-facing: what messages arrived while I was offline |

@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
 from .models import (
-    LEGACY_SESSION_BOUNDARY_PREFIX,
     PermissionRequestPayload,
     PermissionResponsePayload,
     WorkerEvent,
@@ -783,24 +782,28 @@ class BridgeEngine:
     def newest_session_boundary(self, worker: str) -> WorkerEvent | None:
         """The most recent session-boundary marker on `worker`'s timeline.
 
-        Recognises two shapes:
+        A marker is a `kind="session_boundary"` event and nothing else.
 
-        1. `kind="session_boundary"` — the first-class event.
-        2. An `inbound` whose body starts with ``SESSION-BOUNDARY`` — the
-           legacy string marker, which is all a caller could reach before
-           the event kind existed. Timelines written by an older jjstack
-           still carry these, so dropping the fallback would silently
-           un-settle every boundary posted before this change.
+        An earlier revision also treated any `inbound` whose body started
+        with ``SESSION-BOUNDARY`` as a marker, on the assumption that
+        timelines written before the event kind existed carried those. The
+        reviewer of PR #4 measured the live data volume and found zero —
+        jjstack posts via `tm_session_boundary` on every path, in both the
+        repo and the deployed skill pin — so the fallback protected
+        nothing while matching on user-controlled message content: any
+        message that happened to open with that text would silently hide
+        itself and everything above it from a fresh session's read. It is
+        gone, which also makes the "no `session_boundary` event in a
+        boundary-scoped result" check sound again — with the legacy shape
+        recognised, an unfiltered read of a legacy-marked timeline
+        contained no such event either, so the check passed on a read that
+        was never filtered.
         """
         ws = self._workers.get(worker)
         if ws is None:
             return None
         for ev in reversed(ws.events):
             if ev.kind == "session_boundary":
-                return ev
-            if ev.kind == "inbound" and ev.content.lstrip().startswith(
-                LEGACY_SESSION_BOUNDARY_PREFIX
-            ):
                 return ev
         return None
 
@@ -836,6 +839,21 @@ class BridgeEngine:
         session-boundary marker (see :meth:`newest_session_boundary`).
         When both are given the LATER of the two wins, so an explicit
         cursor past the boundary is never widened back to it.
+
+        Anchoring differs by intent, and the difference is load-bearing:
+
+        - `since` is PAGINATION. It walks forward from the cursor, so the
+          window is head-anchored and a caller can page to the end.
+        - Everything else is a RECENCY read — "what should I look at now".
+          Those are tail-anchored, so the newest events are always the
+          ones returned.
+
+        A cursor-less `since_boundary` read is the second kind. It was
+        head-anchored until the reviewer of PR #4 caught it: `/sync-inbox`
+        and jjstack's `resume-from-clear` both read `limit=20` and never
+        page, so once more than 20 events followed the marker the read
+        returned the oldest and hid the newest — precisely where a still
+        -pending order sits.
         """
         ws = self._workers.get(worker)
         if ws is None:
@@ -853,10 +871,11 @@ class BridgeEngine:
                     if e.event_id == marker.event_id:
                         start = max(start, i + 1)
                         break
-        if start == 0 and not since:
-            # No cursor of any kind: the tail is what the caller wants.
-            return ws.events[-limit:]
-        return ws.events[start : start + limit]
+        if since:
+            # Pagination: walk forward from the caller's cursor.
+            return ws.events[start : start + limit]
+        # Recency read (with or without a boundary): newest wins.
+        return ws.events[start:][-limit:]
 
     def list_pending_permissions(
         self,

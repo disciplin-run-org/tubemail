@@ -19,11 +19,11 @@ User-facing changes to TubeMail. Newest first.
   finished work alone. Nothing to configure — the session-boundary commands
   post the mark themselves.
 
-  Two supporting changes come with it. Timelines show a session-boundary
-  divider, and a worker whose last message was a work order now shows as
-  idle once its session ends rather than staying stuck on "busy". And a
-  restart that keeps its conversation still catches up the old way — the
-  new rule applies only where there is no memory to check against.
+  One supporting change comes with it: a worker whose last message was a
+  work order now shows as idle once its session ends, rather than staying
+  stuck on "busy". And a restart that keeps its conversation still catches
+  up the old way — the new rule applies only where there is no memory to
+  check against.
 
 - **Optional: let a worker run without permission prompts.** Unattended
   workers used to stall waiting for someone to approve a tool call. Set
